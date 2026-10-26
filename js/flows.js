@@ -1,7 +1,7 @@
 // Importing money data: receipt photos, banking-app screenshots, bank CSVs.
 // OCR runs on the device with Tesseract.js — images are never uploaded.
 import * as S from './store.js';
-import { esc, money, todayISO, parseAmount, round2, parseDate, titleCase, loadScript, sum, fmtDate, FREQS, $, $$ } from './util.js';
+import { esc, money, todayISO, fromISO, parseAmount, round2, parseDate, titleCase, loadScript, sum, fmtDate, FREQS, $, $$ } from './util.js';
 import { openSheet, closeSheet, sheetHead, toast, icon } from './ui.js';
 import { guessCategory, learn, merchantName } from './categorise.js';
 import { findDuplicate, matchBill, matchIncome, linkOccurrence } from './calc.js';
@@ -327,7 +327,10 @@ function guessAccount(csv) {
   const accs = S.list('accounts').filter(a => a.last4);
   const ai = csv.headers.findIndex(h => /account/i.test(h));
   const hay = csv.name + ' ' + (ai >= 0 ? csv.rows.slice(0, 5).map(r => r[ai]).join(' ') : '');
-  return accs.find(a => hay.replace(/\D/g, ' ').split(' ').some(n => n.endsWith(a.last4)))?.id || '';
+  const nums = hay.replace(/\D/g, ' ').split(' ');
+  const loan = S.list('accounts').find(a => a.loanLast4 && nums.some(n => n.endsWith(a.loanLast4)));
+  if (loan) return loan.id + ':loan';
+  return accs.find(a => nums.some(n => n.endsWith(a.last4)))?.id || '';
 }
 
 // The most recent balance in the statement (banks list newest first or oldest first).
@@ -373,7 +376,7 @@ function csvMapping(csv) {
   openSheet(`${sheetHead('Match the columns', `${csv.rows.length} rows in ${csv.name}`)}
   <form class="form" data-form="csvMap">
     <p class="small muted">We've guessed which column is which — check the preview looks right.</p>
-    ${accs.length ? `<div class="row2"><label class="field"><span>Statement is for</span><select name="accountId"><option value="">Not a tracked account</option>${accs.map(a => `<option value="${a.id}" ${a.id === accId ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label>
+    ${accs.length ? `<div class="row2"><label class="field"><span>Statement is for</span><select name="accountId"><option value="">Not a tracked account</option>${accs.map(a => `<option value="${a.id}" ${a.id === accId ? 'selected' : ''}>${esc(a.name)}</option>` + (a.kind === 'offset' ? `<option value="${a.id}:loan" ${a.id + ':loan' === accId ? 'selected' : ''}>${esc(a.name)} – home loan</option>` : '')).join('')}</select></label>
       <label class="field"><span>Balance column</span><select name="balance">${opt(m.balance)}</select></label></div>` : '<input type="hidden" name="accountId" value=""><input type="hidden" name="balance" value="-1">'}
     <div class="row2"><label class="field"><span>Date</span><select name="date">${opt(m.date)}</select></label>
       <label class="field"><span>Description</span><select name="desc">${opt(m.desc)}</select></label></div>
@@ -394,7 +397,7 @@ function csvMapping(csv) {
         f.dataset.mode = mm.mode;
         const rows = applyMapping(csvState.csv.rows.slice(0, 5), mm);
         const bal = latestBalance(csvState.csv.rows, mm);
-        const acc = f.accountId.value && S.byId('accounts', f.accountId.value);
+        const acc = f.accountId.value && S.byId('accounts', f.accountId.value.split(':')[0]);
         $('#csv-preview', f).innerHTML = (rows.length ? rows.map(r => `<div><span>${fmtDate(r.date)}</span><span>${esc(r.desc)}</span><b class="${r.type === 'in' ? 'pos' : ''}">${r.type === 'in' ? '+' : '−'}${money(r.amount)}</b></div>`).join('')
           : '<p class="status warn">● Nothing readable yet — check the Date and Amount columns.</p>') +
           (acc && bal ? `<p class="status good">✓ Latest balance ${money(bal.value)} on ${fmtDate(bal.date)} will update ${esc(acc.name)}</p>` : '');
@@ -423,16 +426,25 @@ let pendingMeta = {};
 
 function review(rows, source, { editable = false, accountId = '', balance = null } = {}) {
   const pool = S.list('transactions');
-  const acc = accountId ? S.byId('accounts', accountId) : null;
-  pendingMeta = { accountId, balance };
+  const acc = accountId ? S.byId('accounts', accountId.split(':')[0]) : null;
+  const [accId, part] = (accountId || '').split(':');
+  pendingMeta = { accountId: accId, part, balance };
+  // Transfers between your own accounts: the same amount going out of one and into another.
+  const others = S.list('transactions').filter(t => t.accountId && t.accountId !== accId);
+  const last4s = S.list('accounts').flatMap(a => [a.last4, a.loanLast4]).filter(Boolean);
   pending = rows.map(r => {
     const dup = findDuplicate(r, pool);
     const bill = matchBill(r), inc = matchIncome(r);
     let guess = guessCategory(r.desc, r.type);
     // Money going INTO a credit card is almost always you paying it off.
     if (acc?.kind === 'credit' && r.type === 'in' && guess !== 'refund') guess = 'transfer';
+    // a home-loan statement is only repayments and interest — keep its balance, don't count it as spending
+    if (part === 'loan') guess = 'transfer';
+    if (last4s.some(n => r.desc.replace(/\D/g, ' ').split(' ').some(x => x.length >= 4 && x.endsWith(n)))) guess = 'transfer';
+    const twin = others.find(t => t.type !== r.type && Math.abs(t.amount - r.amount) < 0.005 && Math.abs(fromISO(t.date) - fromISO(r.date)) <= 2 * 864e5);
+    if (twin) guess = 'transfer';
     const categoryId = bill?.categoryId || (inc && guess === 'otherin' ? 'wages' : guess);
-    return { ...r, dup: !!dup, billId: bill?.id, incomeId: inc?.id, categoryId, guessed: categoryId };
+    return { ...r, dup: !!dup, billId: twin ? undefined : bill?.id, incomeId: twin ? undefined : inc?.id, categoryId: twin || part === 'loan' ? 'transfer' : categoryId, guessed: twin || part === 'loan' ? 'transfer' : categoryId, twinId: twin?.id };
   }).sort((a, b) => b.date.localeCompare(a.date));
   const dups = pending.filter(p => p.dup).length;
   const real = pending.filter(p => p.categoryId !== 'transfer');
@@ -475,14 +487,15 @@ function submitReview(d, f) {
     if (!(tx.amount > 0)) continue;
     if (tx.categoryId !== p.guessed) learn(tx.desc, tx.categoryId);
     const saved = S.upsert('transactions', tx, { silent: true });
+    if (p.twinId && tx.categoryId === 'transfer') { const tw = S.byId('transactions', p.twinId); if (tw && tw.categoryId !== 'transfer') { tw.categoryId = 'transfer'; tw.billId = tw.incomeId = undefined; tw.updatedAt = Date.now(); } }
     added.push(saved);
     if (p.billId) linkOccurrence(S.byId('bills', p.billId), 'paid', saved);
     if (p.incomeId) linkOccurrence(S.byId('incomes', p.incomeId), 'received', saved);
     n++;
   }
-  const { accountId, balance } = pendingMeta;
+  const { accountId, balance, part } = pendingMeta;
   const acc = accountId && S.byId('accounts', accountId);
-  if (acc && balance) recordBalance(acc, acc.kind === 'credit' ? Math.abs(balance.value) : balance.value, balance.date, { silent: true });
+  if (acc && balance) recordBalance(acc, part === 'loan' ? { loan: Math.abs(balance.value) } : { balance: acc.kind === 'credit' ? Math.abs(balance.value) : balance.value }, balance.date, { silent: true });
   S.save();
   pending = [];
   pendingMeta = {};

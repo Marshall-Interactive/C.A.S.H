@@ -341,21 +341,23 @@ function savePotEntry(d) {
   toast(isIn ? `${money(amount)} added to ${p.name}` : `${money(amount)} taken from ${p.name}`);
 }
 
-// ---------- Accounts (offset, credit card…) ----------
-const KIND_LABELS = { offset: 'Offset account', credit: 'Credit card', savings: 'Savings account', everyday: 'Everyday account' };
+// ---------- Accounts (offset + home loan, credit card, main…) ----------
+const KIND_LABELS = { offset: 'Offset account (with home loan)', credit: 'Credit card', everyday: 'Main / everyday account', savings: 'Savings account' };
 
 export function accountForm(a) {
   const isNew = !a;
-  a = a || { kind: 'offset' };
+  a = a || { kind: 'everyday' };
   openSheet(`${sheetHead(isNew ? 'New account' : 'Edit account', 'Track a balance you check regularly')}
   <form class="form" data-form="account" data-kind="${a.kind}">
     <input type="hidden" name="id" value="${a.id || ''}">
-    <label class="field"><span>Name</span><input name="name" value="${esc(a.name || '')}" required placeholder="e.g. NAB Offset, NAB Qantas card"></label>
+    <label class="field"><span>Name</span><input name="name" value="${esc(a.name || '')}" required placeholder="e.g. NAB Main, NAB Offset, NAB Qantas card"></label>
     <label class="field"><span>Type</span><select name="kind" data-kind-select>${Object.entries(KIND_LABELS).map(([v, l]) => `<option value="${v}" ${v === a.kind ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label class="field if-credit"><span>Card limit</span><input name="limit" inputmode="decimal" value="${a.limit ?? ''}" placeholder="e.g. 10000"></label>
     <label class="field if-offset"><span>Home-loan interest rate (%)</span><input name="rate" inputmode="decimal" value="${a.rate ?? ''}" placeholder="e.g. 6.19"><small class="muted">Used to show how much interest your offset is saving</small></label>
     <label class="field"><span>Account number ends in <small class="muted">(optional — last 4 digits only)</small></span><input name="last4" inputmode="numeric" maxlength="4" value="${esc(a.last4 || '')}" placeholder="1234"></label>
-    ${isNew ? `<label class="field"><span>Current balance <small class="muted">(for a card: the amount owed)</small></span><input name="balance" inputmode="decimal" placeholder="0.00"></label>` : ''}
+    <label class="field if-offset"><span>Home loan account ends in <small class="muted">(optional — helps match home-loan statements)</small></span><input name="loanLast4" inputmode="numeric" maxlength="4" value="${esc(a.loanLast4 || '')}" placeholder="5678"></label>
+    ${isNew ? `<label class="field"><span>Current balance <small class="muted">(for a card: the amount owing)</small></span><input name="balance" inputmode="decimal" placeholder="0.00"></label>
+      <label class="field if-offset"><span>Home loan balance owing</span><input name="loan" inputmode="decimal" placeholder="e.g. 354358.27"></label>` : ''}
     ${actionsRow(isNew, 'deleteAccount', a.id)}
   </form>`, {
     onMount: sheet => {
@@ -365,26 +367,43 @@ export function accountForm(a) {
   });
 }
 
-// Record a balance for today (one entry per day; a second update the same day replaces it).
-export function recordBalance(a, balance, date = todayISO(), { silent = false } = {}) {
-  const hist = (a.history || []).filter(h => h.date !== date);
-  hist.push({ date, balance, by: S.settings().currentMember });
+// Record today's figures (one entry per day; a second update the same day replaces it).
+// vals: { balance, loan (home loan owing), available (card) } — any subset.
+export function recordBalance(a, vals, date = todayISO(), { silent = false } = {}) {
+  if (typeof vals === 'number') vals = { balance: vals };
+  const hist = (a.history || []).map(h => ({ ...h }));
+  let e = hist.find(h => h.date === date);
+  if (!e) {
+    const prev = hist.filter(h => h.date < date).pop() || {};
+    e = { date, balance: prev.balance ?? a.balance ?? null };
+    if (prev.loan ?? a.loanBalance) e.loan = prev.loan ?? a.loanBalance;
+    hist.push(e);
+  }
+  if ('balance' in vals && !('available' in vals)) delete e.available;
+  Object.assign(e, vals, { by: S.settings().currentMember });
   hist.sort((x, y) => x.date.localeCompare(y.date));
   const latest = hist[hist.length - 1];
-  return S.upsert('accounts', { ...a, history: hist.slice(-400), balance: latest.balance }, { silent });
+  return S.upsert('accounts', {
+    ...a, history: hist.slice(-400), balance: latest.balance ?? null,
+    loanBalance: latest.loan ?? a.loanBalance ?? null, available: latest.available ?? null,
+  }, { silent });
 }
+
+const owing = v => Math.abs(round2(parseAmount(v)));
 
 function saveAccount(d) {
   const old = d.id ? S.byId('accounts', d.id) : null;
   const acc = {
     ...(old || { history: [], balance: null }), id: d.id || undefined, name: d.name.trim(), kind: d.kind,
     limit: d.limit ? round2(parseAmount(d.limit)) : null, rate: d.rate ? parseFloat(d.rate) : null,
-    last4: (d.last4 || '').replace(/\D/g, '').slice(-4),
+    last4: (d.last4 || '').replace(/\D/g, '').slice(-4), loanLast4: (d.loanLast4 || '').replace(/\D/g, '').slice(-4),
   };
   const saved = S.upsert('accounts', acc, { silent: true });
-  if (!old && d.balance !== '') {
-    const v = round2(parseAmount(d.balance));
-    recordBalance(saved, d.kind === 'credit' ? Math.abs(v) : v, todayISO(), { silent: true });
+  if (!old && (d.balance || d.loan)) {
+    const vals = {};
+    if (d.balance) vals.balance = d.kind === 'credit' ? owing(d.balance) : round2(parseAmount(d.balance));
+    if (d.kind === 'offset' && d.loan) vals.loan = owing(d.loan);
+    recordBalance(saved, vals, todayISO(), { silent: true });
   }
   S.save();
   closeSheet();
@@ -392,23 +411,28 @@ function saveAccount(d) {
 }
 
 export function balanceForm(a) {
-  const credit = a.kind === 'credit';
-  openSheet(`${sheetHead(`Update ${a.name}`, credit ? 'How much is owed on the card right now?' : 'What is the balance right now?')}
+  const credit = a.kind === 'credit', offset = a.kind === 'offset';
+  const num = v => (v == null ? '' : round2(v).toFixed(2));
+  openSheet(`${sheetHead(`Update ${a.name}`, 'Copy today\'s figures from the NAB app')}
   <form class="form" data-form="balance">
     <input type="hidden" name="id" value="${a.id}">
-    ${amountField(a.balance ?? 0, true)}
+    <label class="field"><span>${credit ? 'Amount owing' : offset ? 'Offset balance' : 'Balance'}</span><input name="amount" inputmode="decimal" value="${num(a.balance)}" required autofocus></label>
+    ${offset ? `<label class="field"><span>Home loan balance owing</span><input name="loan" inputmode="decimal" value="${num(a.loanBalance)}" placeholder="e.g. 354358.27"><small class="muted">Type it with or without the minus sign</small></label>` : ''}
+    ${credit ? `<label class="field"><span>Available balance <small class="muted">(optional)</small></span><input name="available" inputmode="decimal" placeholder="${a.limit ? 'Leave blank to work it out from your limit' : 'From the NAB app'}"></label>` : ''}
     <label class="field"><span>Date</span><input type="date" name="date" value="${todayISO()}" max="${todayISO()}"></label>
-    <p class="small muted">Tip: copy it from the NAB app, or import a NAB CSV for this account and C.A.S.H reads the latest balance for you.</p>
-    <div class="form-actions"><button class="btn primary" type="submit">Save balance</button></div>
+    <p class="small muted">Or import a NAB statement for this account and C.A.S.H reads the latest balance for you.</p>
+    <div class="form-actions"><button class="btn primary" type="submit">Save</button></div>
   </form>`);
 }
 
 function saveBalance(d) {
   const a = S.byId('accounts', d.id);
-  const v = round2(parseAmount(d.amount));
-  recordBalance(a, a.kind === 'credit' ? Math.abs(v) : v, d.date || todayISO());
+  const vals = { balance: a.kind === 'credit' ? owing(d.amount) : round2(parseAmount(d.amount)) };
+  if (a.kind === 'offset' && d.loan) vals.loan = owing(d.loan);
+  if (a.kind === 'credit' && d.available) vals.available = round2(parseAmount(d.available));
+  recordBalance(a, vals, d.date || todayISO());
   closeSheet();
-  toast(`${a.name}: ${money(a.kind === 'credit' ? Math.abs(v) : v)}`);
+  toast(`${a.name} updated`);
 }
 
 // ---------- First run ----------

@@ -66,11 +66,15 @@ function catRow(c, spent) {
   </button>`;
 }
 
-// ---------- accounts (offset, credit card…) ----------
+// ---------- accounts (offset + home loan, credit card, main…) ----------
 export const KINDS = {
   offset: ['🏦', 'Offset account'], savings: ['💰', 'Savings account'],
-  everyday: ['👛', 'Everyday account'], credit: ['💳', 'Credit card'],
+  everyday: ['👛', 'Main account'], credit: ['💳', 'Credit card'],
 };
+
+// Money you owe shows as a red minus figure, e.g. −$354,358.27
+const owed = v => `<span class="neg">${money(-Math.abs(v))}</span>`;
+const signed = v => v < 0 ? `<span class="neg">${money(v)}</span>` : money(v);
 
 function accountFacts(a) {
   const set = a.balance != null;
@@ -79,25 +83,39 @@ function accountFacts(a) {
   const prev = hist.length > 1 ? hist[hist.length - 2] : null;
   const credit = a.kind === 'credit';
   let change = '';
-  if (set && prev) {
+  if (set && prev && prev.balance != null) {
     const diff = a.balance - prev.balance;
     const good = credit ? diff < 0 : diff > 0;
     if (Math.abs(diff) >= 0.01) change = `<span class="${good ? 'pos' : 'neg'}">${diff > 0 ? '▲' : '▼'} ${money(Math.abs(diff))}</span> since ${fmtDate(prev.date)}`;
   }
-  let extra = '', bar = '';
-  if (credit && set && a.limit) {
-    const pct = Math.min(100, (a.balance / a.limit) * 100);
-    const cls = pct >= 80 ? 'bad' : pct >= 50 ? 'warn' : 'good';
-    bar = `<div class="bar"><i class="${cls}" style="width:${pct}%"></i></div>`;
-    extra = `<span class="status ${cls}">${cls === 'good' ? '✓' : cls === 'warn' ? '●' : '⚠'} ${money(Math.max(0, a.limit - a.balance), { whole: true })} available of ${money(a.limit, { whole: true })}</span>`;
-  } else if (credit && !a.limit) extra = '<span class="muted">Add the card limit to see what is available</span>';
-  if (a.kind === 'offset') extra = set && a.rate
-    ? `Saving about <b>${money((a.balance * a.rate) / 100 / 12)}</b> home-loan interest a month`
-    : '<span class="muted">Add your home-loan rate to see the interest it saves</span>';
+  // the headline figure and the lines underneath it
+  const big = !set ? '—' : credit ? owed(a.balance) : signed(a.balance);
+  const label = credit ? 'Amount owing' : a.kind === 'offset' ? 'Offset balance' : 'Balance';
+  const lines = [];
+  let bar = '';
+  if (credit) {
+    const avail = a.available ?? (a.limit && set ? a.limit - a.balance : null);
+    if (avail != null) lines.push(`<div class="acc-line"><span>Available balance</span><b>${money(avail)}</b></div>`);
+    if (a.limit && set) {
+      const pct = Math.min(100, (a.balance / a.limit) * 100);
+      const cls = pct >= 80 ? 'bad' : pct >= 50 ? 'warn' : 'good';
+      bar = `<div class="bar"><i class="${cls}" style="width:${pct}%"></i></div>`;
+      lines.push(`<p class="small status ${cls}">${cls === 'good' ? '✓' : cls === 'warn' ? '●' : '⚠'} ${Math.round(pct)}% of your ${money(a.limit, { whole: true })} limit used</p>`);
+    } else if (!a.limit && a.available == null) lines.push('<p class="small muted">Add the card limit (or the available balance when you update) to see what is left</p>');
+  }
+  if (a.kind === 'offset') {
+    if (a.loanBalance != null) {
+      lines.push(`<div class="acc-line"><span>Home loan balance</span><b>${owed(a.loanBalance)}</b></div>`);
+      if (set) lines.push(`<div class="acc-line"><span>Owing after offset</span><b>${owed(Math.max(0, a.loanBalance - a.balance))}</b></div>`);
+    } else lines.push('<p class="small muted">Tap Update to add your home loan balance</p>');
+    lines.push(set && a.rate
+      ? `<p class="small">Offset saving you about <b>${money((a.balance * a.rate) / 100 / 12)}</b> interest a month</p>`
+      : '<p class="small muted">Add your home-loan rate to see the interest it saves</p>');
+  }
   const stale = !last || (Date.now() - fromISO(last.date)) > 3 * 864e5;
   const day = last && relDay(last.date);
   const updated = last ? `Updated ${/^(Today|Yesterday)$/.test(day) ? day.toLowerCase() : fmtDate(last.date)} ${who(last.by)}` : 'Not updated yet';
-  return { set, credit, change, extra, bar, updated, stale, hist };
+  return { set, credit, change, big, label, lines: lines.join(''), bar, updated, stale, hist };
 }
 
 function accountMini(a) {
@@ -105,8 +123,9 @@ function accountMini(a) {
   const [ic] = KINDS[a.kind] || KINDS.everyday;
   return `<div class="acc-mini ${f.stale ? 'stale' : ''}">
     <div class="acc-top"><span>${ic} ${esc(a.name)}</span><button class="btn sm" data-action="updateBalance" data-id="${a.id}">Update</button></div>
-    <div class="acc-bal">${f.set ? money(a.balance) : '—'}<small>${f.credit ? ' owed' : ''}</small></div>
-    ${f.bar}<p class="small">${f.extra}</p>
+    <small class="muted">${f.label}</small>
+    <div class="acc-bal">${f.big}</div>
+    ${f.bar}${f.lines}
     <p class="small muted">${f.updated}${f.change ? ' · ' + f.change : ''}</p>
   </div>`;
 }
@@ -117,26 +136,27 @@ export function accountCard(a) {
   return `<section class="card account">
     <button class="pot-head" data-action="editAccount" data-id="${a.id}">
       <span class="pot-ic acc">${ic}</span>
-      <span><b>${esc(a.name)}</b><small>${label}${a.kind === 'offset' && a.rate ? ` · ${a.rate}% loan rate` : ''}</small></span>
+      <span><b>${esc(a.name)}</b><small>${label}${a.last4 ? ` ·· ${esc(a.last4)}` : ''}${a.kind === 'offset' && a.rate ? ` · ${a.rate}% loan rate` : ''}</small></span>
     </button>
-    <div class="acc-bal big">${f.set ? money(a.balance) : '—'}<small>${f.credit ? ' owed' : ''}</small></div>
-    ${f.bar}<p class="small">${f.extra}</p>
+    <small class="muted acc-label">${f.label}</small>
+    <div class="acc-bal big">${f.big}</div>
+    ${f.bar}${f.lines}
     <p class="small muted">${f.updated}${f.change ? ' · ' + f.change : ''}</p>
-    ${f.stale ? '<p class="notice small">● Time for an update — type the balance from your NAB app, or import a NAB CSV.</p>' : ''}
-    ${f.hist.length > 1 ? `<div class="pot-entries">${f.hist.slice(-5).reverse().map(h => `<div><span>${fmtDate(h.date)} ${who(h.by)}</span><b>${money(h.balance)}</b></div>`).join('')}</div>` : ''}
-    <div class="btn-row"><button class="btn sm primary" data-action="updateBalance" data-id="${a.id}">Update balance</button></div>
+    ${f.stale ? '<p class="notice small">● Time for an update — type the figures from your NAB app, or import a NAB statement.</p>' : ''}
+    ${f.hist.length > 1 ? `<div class="pot-entries">${f.hist.slice(-5).reverse().map(h => `<div><span>${fmtDate(h.date)} ${who(h.by)}</span><b>${h.balance == null ? '—' : f.credit ? owed(h.balance) : signed(h.balance)}</b></div>`).join('')}</div>` : ''}
+    <div class="btn-row"><button class="btn sm primary" data-action="updateBalance" data-id="${a.id}">Update</button></div>
   </section>`;
 }
 
 function accountsHome() {
   const accs = S.list('accounts');
   if (!accs.length) return '';
-  const offset = sum(accs.filter(a => a.kind !== 'credit'), a => a.balance || 0);
-  const owed = sum(accs.filter(a => a.kind === 'credit'), a => a.balance || 0);
+  const cash = sum(accs.filter(a => a.kind !== 'credit'), a => a.balance || 0);
+  const cards = sum(accs.filter(a => a.kind === 'credit'), a => a.balance || 0);
   return `<section class="card span2">
     <h2>Accounts <a href="#savings">Details</a></h2>
     <div class="acc-grid">${accs.map(accountMini).join('')}</div>
-    ${owed && offset ? `<p class="small muted mt">Cash minus card debt: <b class="${offset - owed >= 0 ? 'pos' : 'neg'}">${money(offset - owed)}</b></p>` : ''}
+    ${cards && cash ? `<p class="small muted mt">Cash minus card debt: <b>${signed(cash - cards)}</b></p>` : ''}
   </section>`;
 }
 
