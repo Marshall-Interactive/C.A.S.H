@@ -18,8 +18,9 @@ A family money app for tracking spending, bills, wages, savings, your offset acc
 - **Manual**: type the amount and where. C.A.S.H guesses the category (Woolworths → Groceries, Ampol → Fuel, etc.).
 - **Receipt photo**: take a photo and C.A.S.H reads the shop, date, total and each item. Change the category on any item to split the receipt (e.g. groceries + dog food + paracetamol).
 - **Screenshot**: screenshot your banking app's list of payments and C.A.S.H picks out each one. On Android you can also use **Share → C.A.S.H** from Photos once the app is installed.
-- **Bank CSV**: export a statement from your bank and import months of payments at once. It works with NAB, CommBank, Westpac, ANZ, ING, Macquarie, Up and Amex. Columns are detected automatically, payments you've already added are spotted, and bill payments are matched to your bills.
+- **Bank CSV or PDF statement**: CSV is the most accurate; PDF statements are read best-effort and you check every line before importing. Export a statement from your bank and import months of payments at once. It works with NAB, CommBank, Westpac, ANZ, ING, Macquarie, Up and Amex. Columns are detected automatically, payments you've already added are spotted, and bill payments are matched to your bills.
   - **NAB Offset / Credit Card**: pick which account the statement is for (or let C.A.S.H work it out from the last 4 digits saved on the account). The latest **balance** in the file updates that account automatically.
+  - **Home loan**: choose "Offset – home loan" for a home-loan statement. It updates the loan balance (shown in red under the Offset) without counting repayments or interest as spending.
   - **Transfers** between your own accounts (like paying off the card from the offset) are kept but never counted as spending, so nothing is counted twice.
 
 It also learns from you. When you change a category, it remembers that shop for next time.
