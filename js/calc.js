@@ -88,7 +88,14 @@ function scheduled(coll, p, doneKey) {
 }
 export const billsInPeriod = p => scheduled('bills', p, 'paid');
 export const incomesInPeriod = p => scheduled('incomes', p, 'received');
-export const expectedIn = p => sum(incomesInPeriod(p), r => r.item.amount);
+// Pay that varies: expect the average of the last three pays actually received.
+export function incomeAmount(i) {
+  if (!i.varies) return +i.amount || 0;
+  const got = Object.values(i.received || {}).map(id => S.byId('transactions', id)).filter(Boolean)
+    .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
+  return got.length ? sum(got, t => t.amount) / got.length : +i.amount || 0;
+}
+export const expectedIn = p => sum(incomesInPeriod(p), r => incomeAmount(r.item));
 
 // Next date a bill falls due on or after today (looks a year ahead).
 export function nextDue(item, from = new Date()) {
@@ -118,11 +125,17 @@ export function findDuplicate(c, pool = S.list('transactions')) {
 function keywordsOf(item) {
   return String(item.keywords || item.name || '').split(',').map(normalise).filter(Boolean);
 }
+// How far an amount may differ and still match: pay that varies matches on
+// its statement name alone; bills with a statement name allow ±50% (energy bills move around).
+function tolerance(coll, item) {
+  if (coll === 'incomes') return item.varies || item.keywords ? Infinity : 0.25;
+  return item.keywords ? 0.5 : 0.25;
+}
 function matchScheduled(coll, c) {
   const d = ' ' + normalise(c.desc) + ' ';
   return S.list(coll).find(b => b.active !== false &&
     keywordsOf(b).some(k => d.includes(k)) &&
-    Math.abs(b.amount - c.amount) <= Math.max(1, b.amount * 0.25));
+    Math.abs(b.amount - c.amount) <= Math.max(1, b.amount * tolerance(coll, b)));
 }
 export const matchBill = c => c.type === 'out' ? matchScheduled('bills', c) : null;
 export const matchIncome = c => c.type === 'in' ? matchScheduled('incomes', c) : null;

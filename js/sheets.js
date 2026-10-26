@@ -3,7 +3,7 @@ import * as S from './store.js';
 import { esc, money, todayISO, parseAmount, round2, currencySymbol, FREQS, sum, perMonth, periodOf, $, $$ } from './util.js';
 import { openSheet, closeSheet, sheetHead, toast, icon, view } from './ui.js';
 import { guessCategory, learn } from './categorise.js';
-import { expectedIn } from './calc.js';
+import { expectedIn, incomeAmount } from './calc.js';
 import { potSaved } from './views.js';
 
 // ---------- small form builders ----------
@@ -188,6 +188,7 @@ export function incomeForm(i) {
     <div class="field"><span>Whose</span>${memberSeg('member', i.member, ['Joint'])}</div>
     ${freqFields(i)}
     <label class="field"><span>Name on bank statement <small class="muted">(optional)</small></span><input name="keywords" value="${esc(i.keywords || '')}" placeholder="e.g. ACME PTY LTD SALARY"></label>
+    <label class="check"><input type="checkbox" name="varies" ${i.varies ? 'checked' : ''}> Amount varies — expect the average of my last 3 pays</label>
     <label class="check"><input type="checkbox" name="active" ${i.active !== false ? 'checked' : ''}> Active</label>
     ${actionsRow(isNew, 'deleteIncome', i.id)}
   </form>`, { onMount: wireFreq });
@@ -198,7 +199,7 @@ function saveIncome(d) {
   if (!(amount > 0)) return toast('Enter an amount');
   S.upsert('incomes', {
     id: d.id || undefined, name: d.name.trim(), amount, member: d.member, frequency: d.frequency,
-    dueDay: +d.dueDay || 1, anchorDate: d.anchorDate, keywords: d.keywords.trim(), active: d.active === 'on',
+    dueDay: +d.dueDay || 1, anchorDate: d.anchorDate, keywords: d.keywords.trim(), active: d.active === 'on', varies: d.varies === 'on',
   });
   closeSheet();
   toast(d.id ? 'Income saved' : 'Income added');
@@ -238,7 +239,7 @@ function deleteCategory(id) {
 }
 
 export function budgetHelper() {
-  const income = Math.round(expectedIn(periodOf(view.period)) || sum(S.list('incomes'), i => perMonth(i.amount, i.frequency)));
+  const income = Math.round(expectedIn(periodOf(view.period)) || sum(S.list('incomes'), i => perMonth(incomeAmount(i), i.frequency)));
   openSheet(`${sheetHead('50/30/20 budget helper', 'A simple rule: needs, wants, savings')}
   <form class="form" data-form="budgetHelper">
     <label class="field"><span>Monthly take-home pay (all of you)</span><input name="income" inputmode="decimal" value="${income || ''}" required></label>
