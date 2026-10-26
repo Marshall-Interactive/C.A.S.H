@@ -38,7 +38,7 @@ export function txRow(t) {
   const c = S.cat(t.categoryId);
   const transfer = c.type === 'transfer';
   const split = t.splits?.length > 1 ? `<span class="badge">split ${t.splits.length}</span>` : '';
-  const src = { receipt: 'receipt', screenshot: 'screenshot', csv: 'bank', bill: 'bill', income: 'wage' }[t.source];
+  const src = { receipt: 'receipt', screenshot: 'screenshot', csv: 'bank', pdf: 'bank', bill: 'bill', income: 'wage' }[t.source];
   const acc = t.accountId ? S.byId('accounts', t.accountId) : null;
   return `<button class="tx" data-action="editTx" data-id="${t.id}">
     <span class="tx-ic" style="--c:${S.memberColor(t.member)}">${c.icon}</span>

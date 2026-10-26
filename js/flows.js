@@ -243,8 +243,9 @@ const BANKS = 'NAB, CommBank, Westpac, ANZ, ING, Macquarie, Up, Bendigo, St.Geor
 export function startCsv() {
   openSheet(`${sheetHead('Import a bank statement', 'Bring in months of payments in one go')}
   <div class="scan-pick">
-    <label class="btn primary big">${icon('upload')} Choose CSV file<input type="file" accept=".csv,text/csv,text/comma-separated-values,application/vnd.ms-excel" hidden id="csv-file"></label>
+    <label class="btn primary big">${icon('upload')} Choose CSV or PDF statement<input type="file" accept=".csv,.pdf,text/csv,text/comma-separated-values,application/vnd.ms-excel,application/pdf" hidden id="csv-file"></label>
     <p class="hint">Works with ${BANKS}</p>
+    <p class="hint">CSV is the most accurate. PDF statements work too — just check the list before importing.</p>
     <details class="howto"><summary>How do I get a CSV from my bank?</summary>
       <ul>
         <li><b>NAB:</b> log in to NAB Internet Banking on a computer → open the account (Offset or Credit card) → Transaction history → pick the dates → Export → CSV. Do one file per account.</li>
@@ -260,7 +261,8 @@ export function startCsv() {
       $('#csv-file', sheet).addEventListener('change', async e => {
         const file = e.target.files[0];
         if (!file) return;
-        try { csvMapping(await readCsv(file)); } catch (err) { console.error(err); toast('Could not read that file: ' + err.message); }
+        const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+        try { if (isPdf) await startPdf(file); else csvMapping(await readCsv(file)); } catch (err) { console.error(err); toast('Could not read that file: ' + err.message); }
       });
     },
   });
@@ -556,7 +558,57 @@ function saveRegular(d, f) {
   toast(`Added ${sel.length} regular payment${sel.length === 1 ? '' : 's'} to your plan`);
 }
 
-export const forms = { receipt: saveReceipt, csvMap: submitCsvMap, review: submitReview, regular: saveRegular };
+// ================= PDF statements =================
+let pdfState = null;
+
+function accountOptions(selected) {
+  return `<option value="">Not a tracked account</option>` + S.list('accounts').map(a =>
+    `<option value="${a.id}" ${a.id === selected ? 'selected' : ''}>${esc(a.name)}</option>` +
+    (a.kind === 'offset' ? `<option value="${a.id}:loan" ${a.id + ':loan' === selected ? 'selected' : ''}>${esc(a.name)} – home loan</option>` : '')).join('');
+}
+
+async function startPdf(file) {
+  const hint = $('#sheet .scan-pick');
+  hint?.insertAdjacentHTML('beforeend', '<p class="hint" id="pdf-status">Reading the PDF…</p>');
+  const { pdfLines, parsePdfStatement } = await import('./pdfimport.js');
+  const lines = await pdfLines(file);
+  const text = lines.map(l => l.text).join(' ');
+  pdfState = { lines, parse: parsePdfStatement };
+  const accId = guessAccount({ name: file.name + ' ' + text.slice(0, 4000), headers: [], rows: [] });
+  openSheet(`${sheetHead('Check your PDF statement', file.name)}
+  <form class="form" data-form="pdfMap">
+    <label class="field"><span>Statement is for</span><select name="accountId">${accountOptions(accId)}</select></label>
+    <div class="field"><span>What we found</span><div id="pdf-preview" class="preview"></div></div>
+    <p class="small muted">PDFs are made for printing, so reading them is best-effort. You'll see every payment on the next screen to check before anything is saved.</p>
+    <div class="form-actions"><button class="btn primary" type="submit">Next: review</button></div>
+  </form>`, {
+    onMount: sheet => {
+      const f = $('form', sheet);
+      const upd = () => {
+        const p = parsePdf(f.accountId.value);
+        const acc = f.accountId.value && S.byId('accounts', f.accountId.value.split(':')[0]);
+        $('#pdf-preview', f).innerHTML = (p.rows.length
+          ? `<p class="status good">✓ ${p.rows.length} payments found</p>` + p.rows.slice(0, 5).map(r => `<div><span>${fmtDate(r.date)}</span><span>${esc(r.desc)}</span><b class="${r.type === 'in' ? 'pos' : ''}">${r.type === 'in' ? '+' : '−'}${money(r.amount)}</b></div>`).join('')
+          : '<p class="status warn">● No payments found in this PDF. Try the CSV export from NAB Internet Banking instead.</p>') +
+          (acc && p.balance ? `<p class="status good">✓ Closing balance ${money(p.balance.value)} will update ${esc(acc.name)}</p>` : '');
+      };
+      f.addEventListener('change', upd); upd();
+    },
+  });
+}
+
+function parsePdf(accountValue) {
+  const acc = accountValue && S.byId('accounts', accountValue.split(':')[0]);
+  return pdfState.parse(pdfState.lines, { credit: acc?.kind === 'credit' && !accountValue.endsWith(':loan') });
+}
+
+function submitPdfMap(d, f) {
+  const p = parsePdf(f.accountId.value);
+  if (!p.rows.length) return toast('No payments found in this PDF — try the CSV export instead');
+  review(p.rows, 'pdf', { accountId: f.accountId.value, balance: f.accountId.value ? p.balance : null });
+}
+
+export const forms = { receipt: saveReceipt, csvMap: submitCsvMap, review: submitReview, regular: saveRegular, pdfMap: submitPdfMap };
 export const actions = {
   scan: el => startScan(el.dataset.mode),
   importCsv: () => startCsv(),
