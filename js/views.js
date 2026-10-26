@@ -95,13 +95,13 @@ function accountFacts(a) {
   let bar = '';
   if (credit) {
     const avail = a.available ?? (a.limit && set ? a.limit - a.balance : null);
-    if (avail != null) lines.push(`<div class="acc-line"><span>Available balance</span><b>${money(avail)}</b></div>`);
+    if (avail != null) lines.push(`<div class="acc-line avail"><span>Available balance</span><b class="pos">${money(avail)}</b></div>`);
     if (a.limit && set) {
       const pct = Math.min(100, (a.balance / a.limit) * 100);
       const cls = pct >= 80 ? 'bad' : pct >= 50 ? 'warn' : 'good';
-      bar = `<div class="bar"><i class="${cls}" style="width:${pct}%"></i></div>`;
+      lines.push(`<div class="bar"><i class="${cls}" style="width:${pct}%"></i></div>`);
       lines.push(`<p class="small status ${cls}">${cls === 'good' ? '✓' : cls === 'warn' ? '●' : '⚠'} ${Math.round(pct)}% of your ${money(a.limit, { whole: true })} limit used</p>`);
-    } else if (!a.limit && a.available == null) lines.push('<p class="small muted">Add the card limit (or the available balance when you update) to see what is left</p>');
+    } else if (!a.limit && a.available == null) lines.push(`<p class="small muted">Tap ${icon('gear', 13)} to add your card limit — then C.A.S.H works out what's available</p>`);
   }
   if (a.kind === 'offset') {
     if (a.loanBalance != null) {
@@ -122,7 +122,7 @@ function accountMini(a) {
   const f = accountFacts(a);
   const [ic] = KINDS[a.kind] || KINDS.everyday;
   return `<div class="acc-mini ${f.stale ? 'stale' : ''}">
-    <div class="acc-top"><span>${ic} ${esc(a.name)}</span><button class="btn sm" data-action="updateBalance" data-id="${a.id}">Update</button></div>
+    <div class="acc-top"><span>${ic} ${esc(a.name)}</span><span class="acc-btns"><button class="icon-btn sm" data-action="editAccount" data-id="${a.id}" aria-label="${esc(a.name)} settings" title="Settings">${icon('gear', 18)}</button><button class="btn sm" data-action="updateBalance" data-id="${a.id}">Update</button></span></div>
     <small class="muted">${f.label}</small>
     <div class="acc-bal">${f.big}</div>
     ${f.bar}${f.lines}
@@ -134,10 +134,13 @@ export function accountCard(a) {
   const f = accountFacts(a);
   const [ic, label] = KINDS[a.kind] || KINDS.everyday;
   return `<section class="card account">
-    <button class="pot-head" data-action="editAccount" data-id="${a.id}">
-      <span class="pot-ic acc">${ic}</span>
-      <span><b>${esc(a.name)}</b><small>${label}${a.last4 ? ` ·· ${esc(a.last4)}` : ''}${a.kind === 'offset' && a.rate ? ` · ${a.rate}% loan rate` : ''}</small></span>
-    </button>
+    <div class="acc-head">
+      <button class="pot-head" data-action="editAccount" data-id="${a.id}">
+        <span class="pot-ic acc">${ic}</span>
+        <span><b>${esc(a.name)}</b><small>${label}${a.last4 ? ` ·· ${esc(a.last4)}` : ''}${a.kind === 'offset' && a.rate ? ` · ${a.rate}% loan rate` : ''}${a.kind === 'credit' && a.limit ? ` · ${money(a.limit, { whole: true })} limit` : ''}</small></span>
+      </button>
+      <button class="icon-btn" data-action="editAccount" data-id="${a.id}" aria-label="${esc(a.name)} settings" title="Settings">${icon('gear', 20)}</button>
+    </div>
     <small class="muted acc-label">${f.label}</small>
     <div class="acc-bal big">${f.big}</div>
     ${f.bar}${f.lines}

@@ -414,12 +414,12 @@ const KIND_LABELS = { offset: 'Offset account (with home loan)', credit: 'Credit
 export function accountForm(a) {
   const isNew = !a;
   a = a || { kind: 'everyday' };
-  openSheet(`${sheetHead(isNew ? 'New account' : 'Edit account', 'Track a balance you check regularly')}
+  openSheet(`${sheetHead(isNew ? 'New account' : a.kind === 'credit' ? 'Card settings' : 'Account settings', a.kind === 'credit' ? 'Set the limit and C.A.S.H works out the rest' : 'Track a balance you check regularly')}
   <form class="form" data-form="account" data-kind="${a.kind}">
     <input type="hidden" name="id" value="${a.id || ''}">
     <label class="field"><span>Name</span><input name="name" value="${esc(a.name || '')}" required placeholder="e.g. NAB Main, NAB Offset, NAB Qantas card"></label>
     <label class="field"><span>Type</span><select name="kind" data-kind-select>${Object.entries(KIND_LABELS).map(([v, l]) => `<option value="${v}" ${v === a.kind ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-    <label class="field if-credit"><span>Card limit</span><input name="limit" inputmode="decimal" value="${a.limit ?? ''}" placeholder="e.g. 10000"></label>
+    <label class="field if-credit"><span>Credit limit</span><input name="limit" inputmode="decimal" value="${a.limit ?? ''}" placeholder="e.g. 10000"><small class="muted">With the limit set, you only need to type either the amount owing or the available balance</small></label>
     <label class="field if-offset"><span>Home-loan interest rate (%)</span><input name="rate" inputmode="decimal" value="${a.rate ?? ''}" placeholder="e.g. 6.19"><small class="muted">Used to show how much interest your offset is saving</small></label>
     <label class="field"><span>Account number ends in <small class="muted">(optional — last 4 digits only)</small></span><input name="last4" inputmode="numeric" maxlength="4" value="${esc(a.last4 || '')}" placeholder="1234"></label>
     <label class="field if-offset"><span>Home loan account ends in <small class="muted">(optional — helps match home-loan statements)</small></span><input name="loanLast4" inputmode="numeric" maxlength="4" value="${esc(a.loanLast4 || '')}" placeholder="5678"></label>
@@ -483,20 +483,48 @@ export function balanceForm(a) {
   openSheet(`${sheetHead(`Update ${a.name}`, 'Copy today\'s figures from the NAB app')}
   <form class="form" data-form="balance">
     <input type="hidden" name="id" value="${a.id}">
-    <label class="field"><span>${credit ? 'Amount owing' : offset ? 'Offset balance' : 'Balance'}</span><input name="amount" inputmode="decimal" value="${num(a.balance)}" required autofocus></label>
+    <label class="field"><span>${credit ? 'Amount owing' : offset ? 'Offset balance' : 'Balance'}</span><input name="amount" inputmode="decimal" value="${num(a.balance)}" ${credit && a.limit ? '' : 'required'} autofocus></label>
     ${offset ? `<label class="field"><span>Home loan balance owing</span><input name="loan" inputmode="decimal" value="${num(a.loanBalance)}" placeholder="e.g. 354358.27"><small class="muted">Type it with or without the minus sign</small></label>` : ''}
-    ${credit ? `<label class="field"><span>Available balance <small class="muted">(optional)</small></span><input name="available" inputmode="decimal" placeholder="${a.limit ? 'Leave blank to work it out from your limit' : 'From the NAB app'}"></label>` : ''}
+    ${credit ? `<label class="field"><span>Available balance</span><input name="available" inputmode="decimal" placeholder="${a.limit ? 'Or type this instead' : 'From the NAB app (optional)'}"></label>
+      <p class="small ${a.limit ? 'muted' : 'status warn'}" id="card-calc">${a.limit ? `Limit ${money(a.limit, { whole: true })}: type either figure and the other is worked out.` : `● Add your credit limit with ${icon('gear', 13)} to have this worked out for you.`}</p>` : ''}
     <label class="field"><span>Date</span><input type="date" name="date" value="${todayISO()}" max="${todayISO()}"></label>
     <p class="small muted">Or import a NAB statement for this account and C.A.S.H reads the latest balance for you.</p>
     <div class="form-actions"><button class="btn primary" type="submit">Save</button></div>
-  </form>`);
+  </form>`, {
+    onMount: sheet => {
+      if (!credit || !a.limit) return;
+      // live: typing one figure fills in the other from the limit
+      const f = $('form', sheet), out = $('#card-calc', sheet);
+      const show = src => {
+        const v = Math.abs(parseAmount(src.value));
+        if (!src.value.trim()) return;
+        const other = round2(a.limit - v);
+        out.innerHTML = src.name === 'amount'
+          ? `Owing ${money(v)} → <b class="pos">${money(other)} available</b>`
+          : `Available ${money(v)} → <b class="neg">${money(-other)} owing</b>`;
+      };
+      f.amount.addEventListener('input', () => { f.available.value = ''; show(f.amount); });
+      f.available.addEventListener('input', () => { f.amount.value = ''; show(f.available); });
+    },
+  });
 }
 
 function saveBalance(d) {
   const a = S.byId('accounts', d.id);
-  const vals = { balance: a.kind === 'credit' ? owing(d.amount) : round2(parseAmount(d.amount)) };
-  if (a.kind === 'offset' && d.loan) vals.loan = owing(d.loan);
-  if (a.kind === 'credit' && d.available) vals.available = round2(parseAmount(d.available));
+  const vals = {};
+  if (a.kind === 'credit') {
+    const owe = d.amount.trim() ? owing(d.amount) : null;
+    const avail = d.available.trim() ? round2(parseAmount(d.available)) : null;
+    if (owe == null && avail == null) return toast('Type the amount owing or the available balance');
+    // with a limit, one figure gives the other
+    vals.balance = owe ?? (a.limit ? round2(a.limit - avail) : null);
+    if (vals.balance == null) return toast('Add your credit limit (⚙️) or type the amount owing');
+    if (avail != null && owe != null) vals.available = avail;
+    else if (avail != null && !a.limit) vals.available = avail;
+  } else {
+    vals.balance = round2(parseAmount(d.amount));
+    if (a.kind === 'offset' && d.loan) vals.loan = owing(d.loan);
+  }
   recordBalance(a, vals, d.date || todayISO());
   closeSheet();
   toast(`${a.name} updated`);
