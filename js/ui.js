@@ -6,6 +6,8 @@ import { currentPeriodKey } from './util.js';
 export const view = {
   period: null,
   planTab: 'budget',
+  pieMode: (() => { try { return localStorage.getItem('cash.pieMode') || 'income'; } catch { return 'income'; } })(),
+  pieGroup: null,
   filters: { type: 'all', q: '', categoryId: '', member: '' },
 };
 export const resetPeriod = () => { view.period = currentPeriodKey(); };

@@ -7,7 +7,7 @@ import { loadScript } from './util.js';
 import { CONFIG } from './config.js';
 
 const LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
-const COLLS = ['categories', 'transactions', 'bills', 'incomes', 'pots', 'accounts'];
+const COLLS = ['categories', 'groups', 'transactions', 'bills', 'incomes', 'pots', 'accounts'];
 // Settings shared by the household; theme and "who uses this phone" stay per device.
 const SHARED = ['householdName', 'members', 'memberColors', 'currency', 'locale', 'monthStartDay'];
 const LS = 'cash.sync';

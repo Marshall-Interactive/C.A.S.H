@@ -206,9 +206,11 @@ function saveIncome(d) {
 }
 
 // ---------- Categories & budget ----------
-export function categoryForm(c) {
+const groupOptions = selected => S.groups().map(g => `<option value="${g.id}" ${g.id === selected ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
+
+export function categoryForm(c, groupId) {
   const isNew = !c;
-  c = c || { icon: '🏷️', group: 'lifestyle', budget: 0, type: 'out' };
+  c = c || { icon: '🏷️', group: groupId || S.groups()[0]?.id, budget: 0, type: 'out' };
   openSheet(`${sheetHead(isNew ? 'New category' : 'Edit category')}
   <form class="form" data-form="category">
     <input type="hidden" name="id" value="${c.id || ''}">
@@ -216,7 +218,7 @@ export function categoryForm(c) {
       <label class="field grow"><span>Name</span><input name="name" value="${esc(c.name || '')}" required placeholder="e.g. Football club"></label></div>
     <div class="row2">
       <label class="field"><span>Monthly budget</span><input name="budget" inputmode="decimal" value="${c.budget || ''}" placeholder="0"></label>
-      <label class="field"><span>Group</span><select name="group">${S.GROUPS.map(g => `<option value="${g.id}" ${g.id === c.group ? 'selected' : ''}>${g.name}</option>`).join('')}</select></label>
+      <label class="field"><span>Spending area</span><select name="group">${groupOptions(c.group)}</select></label>
     </div>
     ${actionsRow(isNew, 'deleteCategory', c.id)}
   </form>`);
@@ -238,23 +240,84 @@ function deleteCategory(id) {
   closeSheet();
 }
 
+// ---------- Spending areas (groups) ----------
+export function groupForm(g) {
+  const isNew = !g;
+  const all = S.groups();
+  if (isNew && !S.freeSlot()) return toast(`You can have up to ${S.MAX_GROUPS} spending areas`);
+  g = g || { name: '', savings: false };
+  const cats = isNew ? [] : S.list('categories').filter(c => c.group === g.id && (c.type || 'out') === 'out');
+  const others = all.filter(x => x.id !== g.id);
+  const positions = isNew ? all.length + 1 : all.length;
+  const current = isNew ? all.length : all.findIndex(y => y.id === g.id);
+  openSheet(`${sheetHead(isNew ? 'New spending area' : 'Edit spending area', 'Group your categories however suits your family')}
+  <form class="form" data-form="group">
+    <input type="hidden" name="id" value="${g.id || ''}">
+    <label class="field"><span>Name</span><input name="name" value="${esc(g.name)}" required placeholder="e.g. Bills, Subscriptions, Kids, Fun money" autofocus></label>
+    <label class="field"><span>Position in the list</span><select name="order">${Array.from({ length: positions }, (_, i) => `<option value="${i}" ${i === current ? 'selected' : ''}>${i + 1}${i === 0 ? ' (top)' : ''}</option>`).join('')}</select></label>
+    <label class="check"><input type="checkbox" name="savings" ${g.savings ? 'checked' : ''}> This is money we put aside as <b>savings</b>, not spending</label>
+    ${!isNew ? `<div class="field"><span>Categories in this area (${cats.length})</span>
+      <div class="chips">${cats.map(c => `<span class="chip-static">${c.icon} ${esc(c.name)}</span>`).join('') || '<span class="muted small">None yet</span>'}</div>
+      <small class="muted">To move a category, tap it in Plan → Budget and change its spending area.</small></div>` : ''}
+    ${!isNew && others.length ? `<details class="howto"><summary>Delete this area</summary>
+      <label class="field mt"><span>Move its categories to</span><select name="moveTo">${others.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label>
+      <button type="button" class="btn danger mt" data-action="deleteGroup" data-id="${g.id}">Delete ${esc(g.name)}</button></details>` : ''}
+    <div class="form-actions"><button class="btn primary" type="submit">${isNew ? 'Add area' : 'Save'}</button></div>
+  </form>`);
+}
+
+function reorder(id, to) {
+  const ids = S.groups().map(x => x.id).filter(x => x !== id);
+  ids.splice(Math.max(0, Math.min(to, ids.length)), 0, id);
+  ids.forEach((gid, i) => {
+    const g = S.getState().groups.find(x => x.id === gid);
+    if (g && g.order !== i) { g.order = i; g.updatedAt = Date.now(); }
+  });
+}
+
+function saveGroup(d) {
+  const existing = d.id && S.byId('groups', d.id);
+  const g = S.upsert('groups', {
+    id: d.id || undefined, name: d.name.trim(), savings: d.savings === 'on',
+    slot: existing ? existing.slot : S.freeSlot(), order: existing ? existing.order : 999, target: existing?.target ?? 0,
+  }, { silent: true });
+  reorder(g.id, +d.order);
+  S.save();
+  closeSheet();
+  toast(existing ? 'Spending area saved' : `${g.name} added — now move categories into it`);
+}
+
+function deleteGroup(el) {
+  const f = el.form, id = el.dataset.id, to = f.moveTo.value;
+  const g = S.byId('groups', id), dest = S.byId('groups', to);
+  if (!confirm(`Delete ${g.name}? Its categories move to ${dest.name}.`)) return;
+  for (const c of S.getState().categories) if (c.group === id) { c.group = to; c.updatedAt = Date.now(); }
+  S.remove('groups', id, { silent: true });
+  reorder(to, S.groups().findIndex(x => x.id === to));
+  S.save();
+  closeSheet();
+  toast(`${g.name} deleted`);
+}
+
+// ---------- 50/30/20-style helper, across whatever areas you have ----------
 export function budgetHelper() {
   const income = Math.round(expectedIn(periodOf(view.period)) || sum(S.list('incomes'), i => perMonth(incomeAmount(i), i.frequency)));
-  openSheet(`${sheetHead('50/30/20 budget helper', 'A simple rule: needs, wants, savings')}
+  const gs = S.groups();
+  openSheet(`${sheetHead('Budget helper', 'Share your take-home pay across your spending areas (e.g. 50/30/20)')}
   <form class="form" data-form="budgetHelper">
     <label class="field"><span>Monthly take-home pay (all of you)</span><input name="income" inputmode="decimal" value="${income || ''}" required></label>
-    <div class="row3">${S.GROUPS.slice(0, 3).map(g => `<label class="field"><span><i class="dot" style="background:${g.color}"></i>${g.name} %</span><input name="pct_${g.id}" type="number" min="0" max="100" value="${g.target}"></label>`).join('')}</div>
+    <div class="helper-grid">${gs.map(g => `<label class="field"><span><i class="dot" style="background:${g.color}"></i>${esc(g.name)} %</span><input name="pct_${g.id}" type="number" min="0" max="100" value="${g.target || 0}"></label>`).join('')}</div>
     <div class="notice" id="helper-preview"></div>
-    <p class="small muted">Each group's budget is shared across its categories in the same proportions you have now. You can fine-tune any category afterwards.</p>
+    <p class="small muted">Each area's budget is shared across its categories in the same proportions you have now. Areas left at 0% aren't changed.</p>
     <div class="form-actions"><button class="btn primary" type="submit">Apply to my budget</button></div>
   </form>`, {
     onMount: sheet => {
       const f = $('form', sheet);
       const upd = () => {
         const inc = parseAmount(f.income.value);
-        const pcts = S.GROUPS.slice(0, 3).map(g => +f['pct_' + g.id].value || 0);
+        const pcts = gs.map(g => +f['pct_' + g.id].value || 0);
         const tot = pcts.reduce((a, b) => a + b, 0);
-        $('#helper-preview', sheet).innerHTML = S.GROUPS.slice(0, 3).map((g, i) => `${g.name}: <b>${money((inc * pcts[i]) / 100, { whole: true })}</b>`).join(' · ') +
+        $('#helper-preview', sheet).innerHTML = gs.map((g, i) => pcts[i] ? `${esc(g.name)}: <b>${money((inc * pcts[i]) / 100, { whole: true })}</b>` : '').filter(Boolean).join(' · ') +
           (tot !== 100 ? `<br><span class="status warn">● Adds up to ${tot}%, not 100%</span>` : '');
       };
       f.addEventListener('input', upd); upd();
@@ -264,9 +327,13 @@ export function budgetHelper() {
 
 function applyBudgetHelper(d) {
   const inc = parseAmount(d.income);
-  for (const g of S.GROUPS.slice(0, 3)) {
-    const target = (inc * (+d['pct_' + g.id] || 0)) / 100;
-    const cats = S.list('categories').filter(c => c.group === g.id && c.type !== 'in');
+  for (const g of S.groups()) {
+    const pct = +d['pct_' + g.id] || 0;
+    const stored = S.byId('groups', g.id);
+    if (stored.target !== pct) { stored.target = pct; stored.updatedAt = Date.now(); }
+    if (!pct) continue;
+    const target = (inc * pct) / 100;
+    const cats = S.list('categories').filter(c => c.group === g.id && (c.type || 'out') === 'out');
     const cur = sum(cats, c => c.budget);
     for (const c of cats) {
       const share = cur ? c.budget / cur : 1 / cats.length;
@@ -458,7 +525,7 @@ export function welcome() {
 export const forms = {
   tx: saveTx, bill: saveBill, income: saveIncome, category: saveCategory,
   budgetHelper: applyBudgetHelper, pot: savePot, potEntry: savePotEntry,
-  account: saveAccount, balance: saveBalance,
+  account: saveAccount, balance: saveBalance, group: saveGroup,
 };
 
 export const actions = {
@@ -474,7 +541,10 @@ export const actions = {
   editIncome: el => incomeForm(S.byId('incomes', el.dataset.id)),
   deleteIncome: el => { if (confirm('Delete this income?')) { S.remove('incomes', el.dataset.id); closeSheet(); } },
   toggleIncome: el => toggleScheduled('incomes', 'received', el.dataset.id, el.dataset.date),
-  newCategory: () => categoryForm(),
+  newCategory: el => categoryForm(null, el.dataset.group),
+  newGroup: () => groupForm(),
+  editGroup: el => groupForm(S.byId('groups', el.dataset.id)),
+  deleteGroup: el => deleteGroup(el),
   editCategory: el => categoryForm(S.byId('categories', el.dataset.id)),
   deleteCategory: el => deleteCategory(el.dataset.id),
   budgetHelper: () => budgetHelper(),

@@ -162,6 +162,72 @@ function accountsHome() {
 
 const empty = (ic, text, action = '') => `<div class="empty"><span class="e-ic">${ic}</span>${text}${action}</div>`;
 
+// ---------- Home pie: income / spending areas / categories ----------
+export const PIE_MODES = [['income', 'Income'], ['areas', 'Spending areas'], ['categories', 'Categories']];
+
+// Spending (incl. savings) per area, with anything in a deleted area counted as Ungrouped.
+function byArea(spent) {
+  const gs = S.groups();
+  const rows = gs.map(g => ({ ...g, value: 0 }));
+  const loose = { id: 'ungrouped', name: 'Ungrouped', color: 'var(--line-2)', savings: false, value: 0 };
+  for (const [id, v] of Object.entries(spent)) {
+    const c = S.byId('categories', id);
+    const row = rows.find(r => r.id === (c ? c.group : 'other')) || loose;
+    row.value += v;
+  }
+  return loose.value > 0.004 ? [...rows, loose] : rows;
+}
+
+function moneyPie(spent, t, base) {
+  const mode = view.pieMode || 'income';
+  const areas = byArea(spent);
+  const saved = sum(areas.filter(a => a.savings), a => a.value);
+  const spending = sum(areas.filter(a => !a.savings), a => a.value);
+  let segs = [], center = '', sub = '', note = '', heading = '';
+  if (mode === 'income') {
+    const left = Math.max(0, base - spending - saved);
+    segs = [
+      { label: 'Spent', value: spending, color: 'var(--s2)' },
+      { label: 'Saved', value: saved, color: 'var(--s3)' },
+      { label: 'Left over', value: left, color: 'var(--line-2)' },
+    ].filter(s => s.value > 0.004);
+    center = money(base, { whole: true }); sub = 'coming in';
+    if (base && spending + saved > base) note = `<p class="status bad small">⚠ Spending is ${money(spending + saved - base)} more than came in</p>`;
+    if (!base) note = '<p class="small muted">Add your wages in Plan → Wages to see your income split.</p>';
+  } else if (mode === 'areas') {
+    segs = areas.filter(a => a.value > 0.004).map(a => ({ id: a.id, label: a.name + (a.savings ? ' (saved)' : ''), value: a.value, color: a.color }));
+    center = money(t.out, { whole: true }); sub = 'out';
+    note = '<p class="small muted">Tap an area to see what\'s inside it.</p>';
+  } else {
+    const g = view.pieGroup && S.groups().find(x => x.id === view.pieGroup);
+    const rows = Object.entries(spent).filter(([id, v]) => v > 0.004 && (!g || S.cat(id).group === g.id)).sort((a, b) => b[1] - a[1]);
+    // the 7 biggest get their own colour; the rest fold into "Everything else"
+    segs = rows.slice(0, 7).map(([id, v], i) => ({ label: `${S.cat(id).icon} ${S.cat(id).name}`, value: v, color: `var(--s${i + 1})` }));
+    const rest = sum(rows.slice(7), ([, v]) => v);
+    if (rest > 0.004) segs.push({ label: `Everything else (${rows.length - 7})`, value: rest, color: 'var(--line-2)' });
+    center = money(sum(rows, ([, v]) => v), { whole: true }); sub = g ? g.name : 'out';
+    if (g) heading = `<button class="link" data-action="pieBack">← All spending areas</button>`;
+  }
+  const total = sum(segs, s => s.value);
+  const legend = segs.map(s => {
+    const pct = total ? Math.round((s.value / total) * 100) : 0;
+    const inner = `<i style="background:${s.color}"></i><span>${esc(s.label)}</span><b>${money(s.value, { whole: true })}</b><small>${pct}%</small>`;
+    return s.id ? `<button class="legend-row pie-row" data-action="pieDrill" data-id="${s.id}">${inner}</button>` : `<div class="legend-row pie-row">${inner}</div>`;
+  }).join('');
+  return `<section class="card span2 pie-card">
+    <h2>Where the money goes</h2>
+    <div class="pie-layout">
+      <div class="chart pie-chart">${donut(segs, { size: 200, thick: 30, center, sub })}</div>
+      <div class="pie-side">
+        <div class="seg small pie-modes" role="radiogroup" aria-label="Show">${PIE_MODES.map(([v, l]) => `<label><input type="radio" name="pieMode" value="${v}" ${mode === v ? 'checked' : ''} data-change="pieMode"><span>${l}</span></label>`).join('')}</div>
+        ${heading}
+        <div class="legend">${legend || '<p class="small muted">Nothing to show for this month yet.</p>'}</div>
+        ${note}
+      </div>
+    </div>
+  </section>`;
+}
+
 // ---------- Home ----------
 export function home() {
   const p = periodOf(view.period);
@@ -188,24 +254,8 @@ export function home() {
     </div>
   </section>`;
 
-  // Where it went: by group (donut) + top categories
-  const groups = S.GROUPS.map(g => ({
-    label: g.name, color: g.color,
-    value: sum(outCats.filter(c => c.group === g.id), c => spent[c.id] || 0),
-  }));
-  // spending against deleted categories lands in Other
-  const known = new Set(outCats.map(c => c.id));
-  groups[3].value += sum(Object.entries(spent).filter(([id]) => !known.has(id)), ([, v]) => v);
-  const top = Object.entries(spent).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const topMax = top[0]?.[1] || 1;
-  const where = `<section class="card">
-    <h2>Where it went</h2>
-    ${t.out ? `<div class="donut-wrap chart">${donut(groups, { center: money(t.out, { whole: true }), sub: 'spent' })}
-      <div class="legend">${groups.map(g => `<div class="legend-row"><i style="background:${g.color}"></i><span>${g.label}</span><b>${money(g.value, { whole: true })}</b></div>`).join('')}</div></div>
-      <h3 class="mini-title">Top categories</h3>
-      <div class="hbar">${top.map(([id, v]) => { const c = S.cat(id); return `<span>${c.icon} ${esc(c.name)}</span><span class="track"><i style="width:${(v / topMax) * 100}%"></i></span><b>${money(v, { whole: true })}</b>`; }).join('')}</div>`
-      : empty('🧾', 'No spending yet this month.<br>Tap <b>＋</b> to add, scan or import.')}
-  </section>`;
+  // Where the money goes: one pie, three ways of looking at it.
+  const pie = moneyPie(spent, t, base);
 
   // Budget watch
   const budgetTotal = sum(outCats, c => c.budget);
@@ -261,7 +311,7 @@ export function home() {
     <div class="hbar">${byMember.map(x => `<span>${who(x.m)}</span><span class="track"><i style="width:${(x.v / bmMax) * 100}%;background:${S.memberColor(x.m)}"></i></span><b>${money(x.v, { whole: true })}</b>`).join('')}</div>
   </section>`;
 
-  return `<div class="grid cols">${hero}${accountsHome()}${where}${budget}${billsCard}${recent}${trend}${whoCard}</div>`;
+  return `<div class="grid cols">${hero}${pie}${accountsHome()}${budget}${billsCard}${recent}${trend}${whoCard}</div>`;
 }
 
 export function billRow(r) {
@@ -339,15 +389,21 @@ function budgetTab() {
       <div class="stat"><small>Bills (monthly)</small><b>${money(billsMonthly, { whole: true })}</b></div>
     </div>
     ${!expIn ? `<p class="notice">Add your wages in the <a href="#plan/wages">Wages</a> tab so C.A.S.H can check your budget adds up.</p>` : ''}
-    <div class="btn-row"><button class="btn" data-action="budgetHelper">✨ 50/30/20 helper</button><button class="btn" data-action="newCategory">${icon('plus', 18)} Category</button></div>
+    <div class="btn-row"><button class="btn" data-action="budgetHelper">✨ Budget helper (50/30/20)</button><button class="btn" data-action="newCategory">${icon('plus', 18)} Category</button></div>
   </section></div>`;
-  for (const g of S.GROUPS) {
-    const gc = cats.filter(c => c.group === g.id);
-    if (!gc.length) continue;
-    const gs = sum(gc, c => spent[c.id] || 0), gb = sum(gc, c => c.budget);
-    html += `<div class="section-title"><span><i class="dot" style="background:${g.color}"></i>${g.name}</span><span>${money(gs, { whole: true })} / ${money(gb, { whole: true })}</span></div>
-      <div class="card list">${gc.map(c => catRow(c, spent[c.id] || 0)).join('')}</div>`;
+  const gs = S.groups();
+  const known = new Set(gs.map(g => g.id));
+  const loose = cats.filter(c => !known.has(c.group));
+  for (const g of [...gs, ...(loose.length ? [S.group('ungrouped')] : [])]) {
+    const gc = g.id === 'ungrouped' ? loose : cats.filter(c => c.group === g.id);
+    const gs2 = sum(gc, c => spent[c.id] || 0), gb = sum(gc, c => c.budget);
+    html += `<div class="section-title"><span><i class="dot" style="background:${g.color}"></i>${esc(g.name)}${g.savings && !/sav/i.test(g.name) ? ' <span class="badge">savings</span>' : ''}
+        ${g.id !== 'ungrouped' ? `<button class="link" data-action="editGroup" data-id="${g.id}" aria-label="Edit ${esc(g.name)}">${icon('pen', 14)} Edit</button>` : ''}</span>
+      <span>${money(gs2, { whole: true })} / ${money(gb, { whole: true })}</span></div>
+      <div class="card list">${gc.map(c => catRow(c, spent[c.id] || 0)).join('') || '<p class="small muted empty-row">No categories here yet.</p>'}
+        ${g.id !== 'ungrouped' ? `<button class="link add-row" data-action="newCategory" data-group="${g.id}">${icon('plus', 14)} Add a category to ${esc(g.name)}</button>` : ''}</div>`;
   }
+  html += `<div class="btn-row"><button class="btn" data-action="newGroup">${icon('plus', 18)} Add a spending area</button></div>`;
   return html;
 }
 

@@ -8,12 +8,26 @@ let state = null;
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
-export const GROUPS = [
-  { id: 'essential', name: 'Essentials', color: 'var(--s1)', target: 50 },
-  { id: 'lifestyle', name: 'Lifestyle', color: 'var(--s2)', target: 30 },
-  { id: 'savings', name: 'Savings', color: 'var(--s3)', target: 20 },
-  { id: 'other', name: 'Other', color: 'var(--s4)', target: 0 },
-];
+// Spending groups ("areas") are the family's own: rename, add, reorder, delete.
+// Each keeps a fixed chart colour slot (1-8) for life, so its colour never
+// changes when other groups come and go. savings: true marks money put aside.
+export const MAX_GROUPS = 8;
+const defaultGroups = () => [
+  { id: 'essential', name: 'Essentials', slot: 1, order: 0, target: 50, savings: false },
+  { id: 'lifestyle', name: 'Lifestyle', slot: 2, order: 1, target: 30, savings: false },
+  { id: 'savings', name: 'Savings', slot: 3, order: 2, target: 20, savings: true },
+  { id: 'other', name: 'Other', slot: 4, order: 3, target: 0, savings: false },
+].map(g => ({ ...g, updatedAt: Date.now() }));
+
+export const groups = () => list('groups').sort((a, b) => a.order - b.order)
+  .map(g => ({ ...g, color: `var(--s${g.slot})` }));
+export const group = id => groups().find(g => g.id === id)
+  || { id: 'ungrouped', name: 'Ungrouped', color: 'var(--line-2)', savings: false, order: 99 };
+export const freeSlot = () => {
+  const used = new Set(list('groups').map(g => g.slot));
+  for (let i = 1; i <= MAX_GROUPS; i++) if (!used.has(i)) return i;
+  return null;
+};
 
 // The starter budget template (Australian household, AUD a month):
 // [id, name, icon, group, monthly budget, type]
@@ -69,7 +83,7 @@ export function templateCategories() {
 
 export function blankState(settings = {}) {
   const s = {
-    version: 2,
+    version: 3,
     createdAt: Date.now(),
     settings: {
       householdName: 'Our Family',
@@ -83,6 +97,7 @@ export function blankState(settings = {}) {
       ...settings,
     },
     categories: templateCategories(),
+    groups: defaultGroups(),
     transactions: [],
     bills: [],
     incomes: [],
@@ -113,7 +128,12 @@ function migrate(s) {
     s.accounts ||= defaultAccounts();
     s.version = 2;
   }
+  if (s.version < 3) {
+    s.groups ||= defaultGroups();
+    s.version = 3;
+  }
   s.accounts ||= [];
+  s.groups ||= defaultGroups();
   ensureColours(s.settings);
   return s;
 }
