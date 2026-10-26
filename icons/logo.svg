@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="C.A.S.H logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16977e"/>
+      <stop offset="1" stop-color="#0a3f37"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd56e"/>
+      <stop offset="1" stop-color="#e9a21f"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <!-- The "C": a gold coin ring left open on the right -->
+  <path d="M352.4 141.1A150 150 0 1 0 352.4 370.9" fill="none" stroke="url(#gold)" stroke-width="52" stroke-linecap="round"/>
+  <!-- The "." of C.A.S.H, sitting in the opening -->
+  <circle cx="396" cy="256" r="24" fill="url(#gold)"/>
+  <!-- Rising bars: spending under control -->
+  <rect x="190" y="276" width="38" height="62" rx="11" fill="#e6fff7"/>
+  <rect x="240" y="232" width="38" height="106" rx="11" fill="#e6fff7"/>
+  <rect x="290" y="186" width="38" height="152" rx="11" fill="url(#gold)"/>
+</svg>
