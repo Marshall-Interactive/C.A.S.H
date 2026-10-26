@@ -485,3 +485,8 @@ form[data-kind]:not([data-kind="credit"]) .if-credit, form[data-kind]:not([data-
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 .h-ic { display: inline-flex; align-items: center; gap: 8px; }
 .inline-name { min-height: 34px; padding: 5px 8px; font-weight: 650; margin-bottom: 2px; }
+.acc-line { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; padding: 5px 0; border-top: 1px dashed var(--line); font-variant-numeric: tabular-nums; }
+.acc-line span { color: var(--ink-2); }
+.acc-label { display: block; margin-top: 12px; font-weight: 650; }
+.acc-label + .acc-bal.big { margin-top: 0; }
+.acc-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important; }
