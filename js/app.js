@@ -15,6 +15,8 @@ const actions = {
   prevPeriod: () => { view.period = shiftPeriod(view.period, -1); render(); },
   nextPeriod: () => { view.period = shiftPeriod(view.period, 1); render(); },
   thisPeriod: () => { resetPeriod(); render(); },
+  pieDrill: el => { view.pieMode = 'categories'; view.pieGroup = el.dataset.id; render(); },
+  pieBack: () => { view.pieMode = 'areas'; view.pieGroup = null; render(); },
   exportBackup: () => {
     download(`cash-backup-${todayISO()}.json`, JSON.stringify(S.getState(), null, 1));
     toast('Backup downloaded');
@@ -135,6 +137,11 @@ const forms = {
 };
 
 const changes = {
+  pieMode: el => {
+    view.pieMode = el.value; view.pieGroup = null;
+    try { localStorage.setItem('cash.pieMode', el.value); } catch {}
+    render();
+  },
   filterType: el => { view.filters.type = el.value; $('#tx-list').innerHTML = V.txList(); },
   filterCat: el => { view.filters.categoryId = el.value; $('#tx-list').innerHTML = V.txList(); },
   filterMember: el => { view.filters.member = el.value; $('#tx-list').innerHTML = V.txList(); },
