@@ -1,11 +1,12 @@
 // Importing money data: receipt photos, banking-app screenshots, bank CSVs.
 // OCR runs on the device with Tesseract.js — images are never uploaded.
 import * as S from './store.js';
-import { esc, money, todayISO, parseAmount, round2, parseDate, titleCase, loadScript, sum, fmtDate, $, $$ } from './util.js';
+import { esc, money, todayISO, parseAmount, round2, parseDate, titleCase, loadScript, sum, fmtDate, FREQS, $, $$ } from './util.js';
 import { openSheet, closeSheet, sheetHead, toast, icon } from './ui.js';
 import { guessCategory, learn, merchantName } from './categorise.js';
 import { findDuplicate, matchBill, matchIncome, linkOccurrence } from './calc.js';
 import { catOptions, recordBalance } from './sheets.js';
+import { findRegular, nextDate } from './detect.js';
 
 const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
 const PAPAPARSE = 'https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js';
@@ -460,6 +461,7 @@ function submitReview(d, f) {
   const sel = $$('[name=sel]:checked', f).map(x => +x.value);
   if (!sel.length) return toast('Nothing ticked');
   let n = 0;
+  const added = [];
   for (const i of sel) {
     const p = pending[i];
     const tx = {
@@ -473,6 +475,7 @@ function submitReview(d, f) {
     if (!(tx.amount > 0)) continue;
     if (tx.categoryId !== p.guessed) learn(tx.desc, tx.categoryId);
     const saved = S.upsert('transactions', tx, { silent: true });
+    added.push(saved);
     if (p.billId) linkOccurrence(S.byId('bills', p.billId), 'paid', saved);
     if (p.incomeId) linkOccurrence(S.byId('incomes', p.incomeId), 'received', saved);
     n++;
@@ -485,12 +488,66 @@ function submitReview(d, f) {
   pendingMeta = {};
   closeSheet();
   toast(`Imported ${n} payment${n === 1 ? '' : 's'}`);
+  const regular = findRegular(added);
+  if (regular.length) setTimeout(() => suggestRegular(regular), 400);
 }
 
-export const forms = { receipt: saveReceipt, csvMap: submitCsvMap, review: submitReview };
+// ================= regular wages & bills spotted in your payments =================
+let suggestions = [];
+
+export function suggestRegular(list) {
+  suggestions = list;
+  if (!list.length) return toast('No regular payments found yet — import at least two months of statements');
+  const members = [...S.settings().members, 'Joint'];
+  openSheet(`${sheetHead('We spotted regular payments', 'Tick the ones to add to your Wages and Bills')}
+  <form class="form" data-form="regular">
+    <div class="imp-list">${list.map((s, i) => {
+      const next = nextDate(s);
+      return `<div class="imp-row">
+        <input type="checkbox" name="sel" value="${i}" checked aria-label="Add this">
+        <div><input name="name_${i}" value="${esc(s.name)}" aria-label="Name" class="inline-name">
+          <div class="meta">${s.type === 'in' ? '💵 Wage / income' : '📄 Bill'} · ${FREQS[s.frequency]} · seen ${s.count}×${s.varies ? ' · amount varies' : ''}${next ? ` · next ${fmtDate(next)}` : ''}</div></div>
+        <b class="tx-amt ${s.type}">${s.varies ? '≈ ' : s.type === 'in' ? '+' : '−'}${money(s.amount)}</b>
+        ${s.type === 'out'
+          ? `<select name="cat_${i}" aria-label="Category">${catOptions('out', s.categoryId)}</select>`
+          : `<select name="member_${i}" aria-label="Whose">${members.map(m => `<option ${m === s.member ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`}
+      </div>`;
+    }).join('')}</div>
+    <p class="small muted">Wages that vary will use the average of your last 3 pays. Future imports tick each one off automatically.</p>
+    <div class="form-actions"><button type="button" class="btn ghost" data-action="closeSheet">Not now</button><button class="btn primary" type="submit">Add ticked</button></div>
+  </form>`, { wide: true });
+}
+
+function saveRegular(d, f) {
+  const sel = $$('[name=sel]:checked', f).map(x => +x.value);
+  if (!sel.length) return closeSheet();
+  for (const i of sel) {
+    const s = suggestions[i], isIn = s.type === 'in';
+    const item = S.upsert(isIn ? 'incomes' : 'bills', {
+      name: f['name_' + i].value.trim() || s.name, amount: s.amount, frequency: s.frequency,
+      dueDay: s.dueDay, anchorDate: s.anchorDate, keywords: s.keywords, active: true,
+      ...(isIn ? { member: f['member_' + i].value, varies: s.varies }
+        : { categoryId: f['cat_' + i].value, method: 'Direct Debit', payer: s.member || 'Joint' }),
+    }, { silent: true });
+    for (const id of s.txIds) {
+      const t = S.byId('transactions', id);
+      if (!t) continue;
+      if (isIn) { t.incomeId = item.id; if (t.categoryId === 'otherin') t.categoryId = 'wages'; }
+      else { t.billId = item.id; t.categoryId = item.categoryId; }
+      t.updatedAt = Date.now();
+      linkOccurrence(item, isIn ? 'received' : 'paid', t);
+    }
+  }
+  S.save();
+  closeSheet();
+  toast(`Added ${sel.length} regular payment${sel.length === 1 ? '' : 's'} to your plan`);
+}
+
+export const forms = { receipt: saveReceipt, csvMap: submitCsvMap, review: submitReview, regular: saveRegular };
 export const actions = {
   scan: el => startScan(el.dataset.mode),
   importCsv: () => startCsv(),
+  findRegular: () => suggestRegular(findRegular()),
   addReceiptItem: () => addReceiptItem(),
   reviewAll: el => $$('#sheet [name=sel]').forEach(c => { c.checked = el.dataset.on === '1'; }),
 };

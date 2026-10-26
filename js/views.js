@@ -1,7 +1,7 @@
 // The main screens. Each returns an HTML string for <main>.
 import * as S from './store.js';
 import { esc, money, sum, periodOf, shiftPeriod, relDay, fmtDate, perMonth, FREQS, fromISO, todayISO } from './util.js';
-import { txInPeriod, spentByCategory, totals, billsInPeriod, incomesInPeriod, expectedIn, nextDue } from './calc.js';
+import { txInPeriod, spentByCategory, totals, billsInPeriod, incomesInPeriod, expectedIn, nextDue, incomeAmount } from './calc.js';
 import { donut, inOutBars } from './charts.js';
 import { icon, view } from './ui.js';
 import * as Sync from './sync.js';
@@ -306,7 +306,7 @@ function budgetTab() {
   const p = periodOf(view.period);
   const spent = spentByCategory(txInPeriod(p));
   const cats = S.list('categories').filter(c => (c.type || 'out') === 'out');
-  const expIn = expectedIn(p) || sum(S.list('incomes'), i => perMonth(i.amount, i.frequency));
+  const expIn = expectedIn(p) || sum(S.list('incomes'), i => perMonth(incomeAmount(i), i.frequency));
   const budgeted = sum(cats, c => c.budget);
   const left = expIn - budgeted;
   const billsMonthly = sum(S.list('bills').filter(b => b.active !== false), b => perMonth(b.amount, b.frequency));
@@ -343,7 +343,7 @@ function billsTab() {
         <div class="stat"><small>Bills a year</small><b>${money(monthly * 12, { whole: true })}</b></div>
         <div class="stat"><small>Paid this month</small><b>${rows.filter(r => r.done).length} of ${rows.length}</b></div>
       </div>
-      <div class="btn-row"><button class="btn primary" data-action="newBill">${icon('plus', 18)} Add bill</button></div>
+      <div class="btn-row"><button class="btn primary" data-action="newBill">${icon('plus', 18)} Add bill</button><button class="btn" data-action="findRegular">${icon('search', 18)} Find from my payments</button></div>
     </section>
     <div class="section-title"><span>Due in ${esc(p.label)}</span><span>${money(sum(rows, r => r.item.amount))}</span></div>
     <div class="card list">${rows.length ? rows.map(billRow).join('') : empty('📄', 'No bills due this month yet.<br>Add rent, council tax, energy, phones, subscriptions…')}</div>
@@ -361,11 +361,11 @@ function wagesTab() {
   const received = sum(txInPeriod(p).filter(t => t.type === 'in' && !S.isTransfer(t.categoryId)), t => t.amount);
   return `<section class="card">
       <div class="stat-row">
-        <div class="stat"><small>Expected this month</small><b>${money(sum(rows, r => r.item.amount))}</b></div>
+        <div class="stat"><small>Expected this month</small><b>${money(sum(rows, r => incomeAmount(r.item)))}</b></div>
         <div class="stat"><small>Received so far</small><b class="pos">${money(received)}</b></div>
-        <div class="stat"><small>Average a month</small><b>${money(sum(S.list('incomes'), i => perMonth(i.amount, i.frequency)), { whole: true })}</b></div>
+        <div class="stat"><small>Average a month</small><b>${money(sum(S.list('incomes'), i => perMonth(incomeAmount(i), i.frequency)), { whole: true })}</b></div>
       </div>
-      <div class="btn-row"><button class="btn primary" data-action="newIncome">${icon('plus', 18)} Add wage / income</button></div>
+      <div class="btn-row"><button class="btn primary" data-action="newIncome">${icon('plus', 18)} Add wage / income</button><button class="btn" data-action="findRegular">${icon('search', 18)} Find from my payments</button></div>
     </section>
     <div class="section-title"><span>Paydays in ${esc(p.label)}</span></div>
     <div class="card list">${rows.length ? rows.map(r => {
@@ -373,7 +373,7 @@ function wagesTab() {
       return `<div class="bill ${r.done ? 'is-paid' : ''}">
         <div class="due in"><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-AU', { month: 'short' })}</small></div>
         <button class="bill-main" data-action="editIncome" data-id="${i.id}"><b>💵 ${esc(i.name)}</b><small>${esc(i.member || '')} · ${FREQS[i.frequency] || ''}</small></button>
-        <span class="tx-amt in">+${money(i.amount)}</span>
+        <span class="tx-amt in">${i.varies ? '≈ ' : '+'}${money(incomeAmount(i))}</span>
         <button class="paid-btn ${r.done ? 'on' : ''}" data-action="toggleIncome" data-id="${i.id}" data-date="${r.date}" aria-label="${r.done ? 'Mark not received' : 'Mark received'}" title="${r.done ? 'Received — tap to undo' : 'Mark as received'}">${icon('check', 18)}</button>
       </div>`;
     }).join('') : empty('💵', 'Add each wage, Family Tax Benefit and other regular money coming in.')}</div>`;
