@@ -16,6 +16,13 @@ const actions = {
   nextPeriod: () => { view.period = shiftPeriod(view.period, 1); render(); },
   thisPeriod: () => { resetPeriod(); render(); },
   pieDrill: el => { view.pieMode = 'categories'; view.pieGroup = el.dataset.id; render(); },
+  moneyIn: () => openSheet(V.moneyInSheet()),
+  moneyInActivity: () => {
+    view.filters = { type: 'in', q: '', categoryId: '', member: '' };
+    closeSheet();
+    // closing the sheet steps history back first; move on once that has landed
+    setTimeout(() => { location.hash = '#activity'; }, 60);
+  },
   pieBack: () => { view.pieMode = 'areas'; view.pieGroup = null; render(); },
   exportBackup: () => {
     download(`cash-backup-${todayISO()}.json`, JSON.stringify(S.getState(), null, 1));
