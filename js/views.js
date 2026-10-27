@@ -58,7 +58,7 @@ function status(spent, budget) {
 function catRow(c, spent) {
   const st = status(spent, c.budget);
   const pct = c.budget ? Math.min(100, (spent / c.budget) * 100) : 0;
-  return `<button class="cat-row" data-action="editCategory" data-id="${c.id}">
+  return `<button class="cat-row" data-action="spendList" data-kind="cat" data-id="${c.id}">
     <span class="tx-ic">${c.icon}</span>
     <span><span class="nm">${esc(c.name)}</span><br><span class="status ${st.cls}">${st.text}</span></span>
     <span class="vals"><b>${money(spent, { whole: true })}</b><br>of ${money(c.budget, { whole: true })}</span>
@@ -276,7 +276,7 @@ export function moneyInSheet() {
   const block = (title, list, ic) => list.length ? `<div class="section-title"><span>${ic} ${title}</span><span>${money(sum(list, t => t.amount))}</span></div>
     <div class="card list">${list.map(row).join('')}</div>` : '';
   const total = sum(ins, t => t.amount);
-  return `${sheetHead('Money in', esc(p.range))}
+  return `${sheetHead('Money in', p.range)}
     <div class="in-summary">
       <div><small>Wages</small><b>${money(sum(wages, t => t.amount))}</b><small>${wages.length} pay${wages.length === 1 ? '' : 's'}</small></div>
       <div><small>All money in</small><b>${money(total)}</b><small>${ins.length} payment${ins.length === 1 ? '' : 's'}</small></div>
@@ -322,12 +322,12 @@ export function spendSheet(kind, id) {
     const byCat = {};
     for (const l of lines) (byCat[l.categoryId] ||= []).push(l);
     body = Object.entries(byCat).sort((a, b) => sum(b[1], l => l.amount) - sum(a[1], l => l.amount)).map(([cid, ls]) =>
-      `<div class="section-title"><span>${S.cat(cid).icon} ${esc(S.cat(cid).name)}</span><span>${money(sum(ls, l => l.amount))}</span></div>
+      `<div class="section-title"><button class="link cat-link" data-action="spendList" data-kind="cat" data-id="${cid}">${S.cat(cid).icon} ${esc(S.cat(cid).name)} ›</button><span>${money(sum(ls, l => l.amount))}</span></div>
       <div class="card list">${ls.map(row).join('')}</div>`).join('');
   }
   const budget = c ? +c.budget || 0 : g ? sum(S.list('categories').filter(x => x.group === g.id), x => +x.budget || 0) : 0;
   const biggest = lines.reduce((m, l) => (l.amount > (m?.amount || 0) ? l : m), null);
-  return `${sheetHead(esc(title), esc(p.range))}
+  return `${sheetHead(title, p.range)}
     <div class="in-summary out">
       <div><small>Spent</small><b>${money(total)}</b><small>${lines.length} payment${lines.length === 1 ? '' : 's'}</small></div>
       ${budget ? `<div><small>Budget</small><b class="${total > budget ? 'neg' : ''}">${money(budget)}</b><small>${total > budget ? money(total - budget) + ' over' : money(budget - total) + ' left'}</small></div>`
@@ -337,7 +337,7 @@ export function spendSheet(kind, id) {
     <p class="small muted">Tap a payment to change it or move it to another category.</p>
     <div class="form-actions">
       ${kind === 'area' && g ? `<button class="btn" data-action="pieDrillFromSheet" data-id="${g.id}">Show as a pie by category</button>` : ''}
-      ${kind === 'cat' ? `<button class="btn" data-action="catActivity" data-id="${esc(id)}">See in Activity</button>` : ''}
+      ${kind === 'cat' ? `<button class="btn" data-action="editCategory" data-id="${esc(id)}">${icon('pen', 16)} Edit category</button><button class="btn" data-action="catActivity" data-id="${esc(id)}">See in Activity</button>` : ''}
     </div>`;
 }
 

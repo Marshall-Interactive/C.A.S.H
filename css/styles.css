@@ -530,6 +530,7 @@ button.tally-row:hover { background: var(--surface-2); }
 .in-summary small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pie-chart path.slice { cursor: pointer; transition: opacity .15s; }
 .pie-chart path.slice:hover { opacity: .82; }
+.section-title .cat-link { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
 .pie-row .chev { font-style: normal; color: var(--muted); }
 .tx-amt.muted { color: var(--muted); }
 .tally-row.total { margin-top: 6px; border-top: 2px solid var(--line-2); padding-top: 12px; font-size: 18px; }
