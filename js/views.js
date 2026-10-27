@@ -7,6 +7,7 @@ import { icon, view, sheetHead } from './ui.js';
 import * as Sync from './sync.js';
 import { yearTab, yearCard } from './year.js';
 import { streakCard, sweepCard } from './motivate.js';
+import { remindersOn, canNotify } from './reminders.js';
 
 export const TITLES = { home: 'Home', activity: 'Activity', plan: 'Plan', savings: 'Savings', settings: 'Settings' };
 
@@ -836,6 +837,11 @@ export function settingsView() {
   </section>
   <section class="card">
     ${syncCard()}
+    <h2 class="mt">Bill reminders</h2>
+    ${canNotify() ? (remindersOn() ? `<p class="small">🔔 On for this device — a notification the day before and the day a bill is due.</p>
+      <div class="btn-col"><button class="btn" data-action="remindersOff">Turn reminders off</button></div>`
+      : `<p class="small muted">Get a notification the day before and the day a bill is due. Each phone turns this on for itself.</p>
+      <div class="btn-col"><button class="btn" data-action="remindersOn">🔔 Turn on bill reminders</button></div>`) : '<p class="small muted">This browser can\'t show notifications.</p>'}
     <h2 class="mt">Sorting</h2>
     <div class="btn-col"><button class="btn" data-action="rules">🏷️ Category rules <small class="muted">— e.g. “BWS” → Alcohol</small></button></div>
     <h2 class="mt">Your data</h2>
