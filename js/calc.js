@@ -115,12 +115,26 @@ function shareWord(a, b) {
   return false;
 }
 
-export function findDuplicate(c, pool = S.list('transactions')) {
+const FROM_BANK = new Set(['csv', 'pdf']);
+
+// Is this bank row something already in C.A.S.H?
+// 1. Your own entries win: anything you added yourself (by hand, receipt,
+//    ticking a bill…) with the same amount within 3 days is a match, whatever
+//    it's called. The closest date wins; each entry can only match one row.
+// 2. Otherwise it's a repeat of an earlier import if the date or a word in
+//    the name also lines up (or it was linked to your entry last time).
+// `used` stops one entry soaking up two identical rows (two $4.50 coffees).
+export function findDuplicate(c, pool = S.list('transactions'), used = new Set()) {
   const t = fromISO(c.date);
-  return pool.find(x => x.type === c.type && Math.abs(x.amount - c.amount) < 0.005 &&
-    Math.abs(fromISO(x.date) - t) <= 3 * 864e5 &&
-    (x.date === c.date || shareWord(x.desc, c.desc) || x.billId || x.incomeId));
+  const near = x => !used.has(x.id) && x.type === c.type && Math.abs(x.amount - c.amount) < 0.005 &&
+    Math.abs(fromISO(x.date) - t) <= 3 * 864e5;
+  const gap = x => Math.abs(fromISO(x.date) - t);
+  const mine = pool.filter(x => near(x) && !FROM_BANK.has(x.source) && !x.bankMatched).sort((a, b) => gap(a) - gap(b))[0];
+  if (mine) return mine;
+  return pool.find(x => near(x) && (x.date === c.date || shareWord(x.desc, c.desc) || x.billId || x.incomeId ||
+    (x.bankMatched && (x.bankDate === c.date || shareWord(x.bankDesc || '', c.desc)))));
 }
+export const isMine = x => !FROM_BANK.has(x.source);
 
 function keywordsOf(item) {
   return String(item.keywords || item.name || '').split(',').map(normalise).filter(Boolean);
