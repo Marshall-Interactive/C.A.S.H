@@ -8,6 +8,7 @@ import * as Flows from './flows.js';
 import { demoState } from './demo.js';
 import { thisYear } from './year.js';
 import { showWrapped, maybeShowWrapped } from './wrapped.js';
+import * as Remind from './reminders.js';
 import * as Sync from './sync.js';
 
 const actions = {
@@ -20,6 +21,12 @@ const actions = {
   pieDrill: el => { view.pieMode = 'categories'; view.pieGroup = el.dataset.id; render(); },
   moneyIn: () => openSheet(V.moneyInSheet()),
   wrapped: el => showWrapped(el.dataset.key),
+  remindersOn: el => busyButton(el, async () => {
+    const daily = await Remind.turnOn();
+    toast(daily ? '🔔 Reminders on — C.A.S.H will check your bills about once a day' : '🔔 Reminders on — you\'ll get them when you open C.A.S.H');
+    render();
+  }),
+  remindersOff: async () => { await Remind.turnOff(); toast('Reminders off'); render(); },
   prevYear: () => { view.year = (view.year ?? thisYear()) - 1; render(); },
   nextYear: () => { view.year = (view.year ?? thisYear()) + 1; render(); },
   thisYear: () => { view.year = thisYear(); render(); },
@@ -267,11 +274,12 @@ window.addEventListener('hashchange', () => {
 
 // App shortcuts (long-press the icon on Android) and shared screenshots.
 function handleShortcut(h) {
-  if (!['add', 'scan', 'shared'].includes(h)) return false;
+  if (!['add', 'scan', 'shared', 'import'].includes(h)) return false;
   history.replaceState(null, '', '#home');
   render();
   if (h === 'add') Sheets.addMenu();
   if (h === 'scan') Flows.startScan('receipt');
+  if (h === 'import') Flows.actions.importCsv();
   if (h === 'shared') openShared();
   return true;
 }
@@ -314,6 +322,7 @@ Sync.start();
 if (!handleShortcut(location.hash.slice(1))) render();
 if (firstRun) Sheets.welcome();
 else maybeShowWrapped();
+Remind.watch();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW', err));

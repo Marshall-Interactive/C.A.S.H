@@ -16,7 +16,9 @@
   ],
   "shortcuts": [
     { "name": "Add expense", "url": "./#add", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Scan receipt", "url": "./#scan", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+    { "name": "Scan receipt", "url": "./#scan", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Import statement", "url": "./#import", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "This year", "url": "./#plan/year", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
   ],
   "share_target": {
     "action": "./share-target",
