@@ -5,6 +5,7 @@ import { txInPeriod, spendLines, spentByCategory, totals, billsInPeriod, incomes
 import { donut, inOutBars } from './charts.js';
 import { icon, view, sheetHead } from './ui.js';
 import * as Sync from './sync.js';
+import { yearTab, yearCard } from './year.js';
 
 export const TITLES = { home: 'Home', activity: 'Activity', plan: 'Plan', savings: 'Savings', settings: 'Settings' };
 
@@ -16,7 +17,7 @@ export const NAV = [
 ];
 
 export function topbar(route) {
-  const showMonth = ['home', 'activity', 'plan'].includes(route);
+  const showMonth = ['home', 'activity', 'plan'].includes(route) && !(route === 'plan' && view.planTab === 'year');
   const p = periodOf(view.period);
   return `<div class="topbar-inner">
     <a class="brand-sm" href="#home" aria-label="C.A.S.H home"><img src="icons/logo.svg" alt=""></a>
@@ -433,7 +434,7 @@ export function home() {
     <div class="hbar">${byMember.map(x => `<span>${who(x.m)}</span><span class="track"><i style="width:${(x.v / bmMax) * 100}%;background:${S.memberColor(x.m)}"></i></span><b>${money(x.v, { whole: true })}</b>`).join('')}</div>
   </section>`;
 
-  return `<div class="grid cols">${hero}${pie}${accountsHome()}${budget}${billsCard}${recent}${trend}${whoCard}</div>`;
+  return `<div class="grid cols">${hero}${pie}${accountsHome()}${budget}${billsCard}${recent}${yearCard()}${trend}${whoCard}</div>`;
 }
 
 export function billRow(r) {
@@ -490,8 +491,8 @@ export function txList() {
 // ---------- Plan: budget, bills, wages ----------
 export function plan(tab = view.planTab) {
   view.planTab = tab;
-  const tabs = [['budget', 'Budget'], ['bills', 'Bills'], ['wages', 'Wages']];
-  const body = tab === 'bills' ? billsTab() : tab === 'wages' ? wagesTab() : budgetTab();
+  const tabs = [['budget', 'Budget'], ['bills', 'Bills'], ['wages', 'Wages'], ['year', 'Year']];
+  const body = tab === 'bills' ? billsTab() : tab === 'wages' ? wagesTab() : tab === 'year' ? yearTab() : budgetTab();
   return `<nav class="tabs">${tabs.map(([id, l]) => `<a href="#plan/${id}" class="${tab === id ? 'active' : ''}">${l}</a>`).join('')}</nav>${body}`;
 }
 
