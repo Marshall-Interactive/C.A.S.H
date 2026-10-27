@@ -8,6 +8,7 @@ import * as Sync from './sync.js';
 import { yearTab, yearCard } from './year.js';
 import { streakCard, sweepCard } from './motivate.js';
 import { remindersOn, canNotify } from './reminders.js';
+import { cardLines, cardSheetHtml } from './card.js';
 
 export const TITLES = { home: 'Home', activity: 'Activity', plan: 'Plan', savings: 'Savings', settings: 'Settings' };
 
@@ -105,6 +106,7 @@ function accountFacts(a) {
       lines.push(`<div class="bar"><i class="${cls}" style="width:${pct}%"></i></div>`);
       lines.push(`<p class="small status ${cls}">${cls === 'good' ? '✓' : cls === 'warn' ? '●' : '⚠'} ${Math.round(pct)}% of your ${money(a.limit, { whole: true })} limit used</p>`);
     } else if (!a.limit && a.available == null) lines.push(`<p class="small muted">Tap ${icon('gear', 13)} to add your card limit — then C.A.S.H works out what's available</p>`);
+    lines.push(cardLines(a));
   }
   if (a.kind === 'offset') {
     if (a.loanBalance != null) {
@@ -352,6 +354,8 @@ export function spendSheet(kind, id) {
       ${kind === 'cat' ? `<button class="btn" data-action="editCategory" data-id="${esc(id)}">${icon('pen', 16)} Edit category</button><button class="btn" data-action="catActivity" data-id="${esc(id)}">See in Activity</button>` : ''}
     </div>`;
 }
+
+export const cardSheet = card => cardSheetHtml(card, { sheetHead, inOutBars });
 
 // ---------- Home ----------
 export function home() {

@@ -58,7 +58,7 @@ function barPath(x, y, w, h, r = 4) {
 }
 
 // rows: [{label, in, out}] — two series side by side, one axis.
-export function inOutBars(rows, { h = 180 } = {}) {
+export function inOutBars(rows, { h = 180, names = ['in', 'out'] } = {}) {
   const padL = 40, padB = 22, padT = 8, groupW = 52, barW = 16, gap = 2;
   const W = padL + rows.length * groupW + 8;
   const max = niceMax(Math.max(...rows.flatMap(r => [r.in, r.out]), 0));
@@ -74,7 +74,7 @@ export function inOutBars(rows, { h = 180 } = {}) {
     s += `<path d="${barPath(gx + barW + gap, y(r.out), barW, plotH + padT - y(r.out))}" fill="var(--s2)"${op}/>`;
     s += `<text x="${gx + barW + gap / 2}" y="${h - 6}" text-anchor="middle">${esc(r.label)}</text>`;
     s += `<rect x="${padL + i * groupW}" y="${padT}" width="${groupW}" height="${plotH}" fill="transparent"
-      data-tip="${esc(r.label)}: in ${esc(money(r.in, { whole: true }))} · out ${esc(money(r.out, { whole: true }))}|${esc(money(r.in - r.out, { sign: true, whole: true }))}"/>`;
+      data-tip="${esc(r.label)}: ${names[0]} ${esc(money(r.in, { whole: true }))} · ${names[1]} ${esc(money(r.out, { whole: true }))}|${esc(money(r.in - r.out, { sign: true, whole: true }))}"/>`;
   });
   return `<svg class="axis" viewBox="0 0 ${W} ${h}" role="img" aria-label="Money in and out by month">${s}</svg>`;
 }

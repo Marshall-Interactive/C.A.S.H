@@ -525,6 +525,11 @@ button.tally-row:hover { background: var(--surface-2); }
 .in-summary small { display: block; color: var(--muted); font-size: 12px; }
 .in-summary b { font-size: 20px; color: var(--good-ink); font-variant-numeric: tabular-nums; }
 .tx.static { cursor: default; }
+.card-month { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.card-link { display: inline-block; margin-top: 4px; padding: 0; }
+.card-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 6px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.card-row:last-child { border-bottom: 0; }
+.card-row small { display: block; color: var(--muted); font-size: 11px; }
 .streak-main { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .streak-fire { font-size: 40px; line-height: 1; animation: party-bounce 1.2s ease-in-out infinite alternate; }
 .streak-n { font-size: 24px; display: block; }

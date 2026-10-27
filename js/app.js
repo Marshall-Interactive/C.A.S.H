@@ -20,6 +20,7 @@ const actions = {
   thisPeriod: () => { resetPeriod(); render(); },
   pieDrill: el => { view.pieMode = 'categories'; view.pieGroup = el.dataset.id; render(); },
   moneyIn: () => openSheet(V.moneyInSheet()),
+  cardSheet: el => openSheet(V.cardSheet(S.byId('accounts', el.dataset.id))),
   wrapped: el => showWrapped(el.dataset.key),
   remindersOn: el => busyButton(el, async () => {
     const daily = await Remind.turnOn();
