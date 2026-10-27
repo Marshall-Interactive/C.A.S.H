@@ -514,6 +514,7 @@ function submitReview(d, f) {
       date: f['date_' + i]?.value || p.date,
       categoryId: f['cat_' + i].value, member: d.member, source: d.source,
       billId: p.billId, incomeId: p.incomeId, accountId: pendingMeta.accountId || undefined,
+      accountPart: pendingMeta.part === 'loan' ? 'loan' : undefined,
     };
     if (!(tx.amount > 0)) continue;
     if (tx.categoryId !== p.guessed) learn(tx.desc, tx.categoryId);

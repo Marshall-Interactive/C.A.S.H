@@ -1,9 +1,9 @@
 // Service worker: lets C.A.S.H open offline and receive shared screenshots.
-const CACHE = 'cash-v26';
+const CACHE = 'cash-v27';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
   'js/app.js', 'js/store.js', 'js/util.js', 'js/ui.js', 'js/views.js', 'js/sheets.js',
-  'js/flows.js', 'js/calc.js', 'js/categorise.js', 'js/charts.js', 'js/demo.js', 'js/sync.js', 'js/config.js', 'js/detect.js', 'js/pdfimport.js', 'js/year.js', 'js/wrapped.js', 'js/motivate.js', 'js/reminders.js', 'js/card.js',
+  'js/flows.js', 'js/calc.js', 'js/categorise.js', 'js/charts.js', 'js/demo.js', 'js/sync.js', 'js/config.js', 'js/detect.js', 'js/pdfimport.js', 'js/year.js', 'js/wrapped.js', 'js/motivate.js', 'js/reminders.js', 'js/card.js', 'js/statement.js',
   'icons/logo.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 

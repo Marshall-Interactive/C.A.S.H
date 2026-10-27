@@ -9,6 +9,7 @@ import { demoState } from './demo.js';
 import { thisYear } from './year.js';
 import { showWrapped, maybeShowWrapped } from './wrapped.js';
 import * as Remind from './reminders.js';
+import { statementHtml, statementCsv } from './statement.js';
 import * as Sync from './sync.js';
 
 const actions = {
@@ -20,6 +21,8 @@ const actions = {
   thisPeriod: () => { resetPeriod(); render(); },
   pieDrill: el => { view.pieMode = 'categories'; view.pieGroup = el.dataset.id; render(); },
   moneyIn: () => openSheet(V.moneyInSheet()),
+  statement: el => openSheet(statementHtml(S.byId('accounts', el.dataset.id), el.dataset.key || view.period, el.dataset.part || '')),
+  statementCsv: el => statementCsv(S.byId('accounts', el.dataset.id), el.dataset.key, el.dataset.part || ''),
   cardSheet: el => openSheet(V.cardSheet(S.byId('accounts', el.dataset.id))),
   wrapped: el => showWrapped(el.dataset.key),
   remindersOn: el => busyButton(el, async () => {
@@ -172,6 +175,7 @@ const changes = {
     try { localStorage.setItem('cash.pieMode', el.value); } catch {}
     render();
   },
+  stmtPart: el => openSheet(statementHtml(S.byId('accounts', el.dataset.id), el.dataset.key, el.value)),
   yearKind: el => {
     view.yearKind = el.value; view.year = thisYear(el.value);
     try { localStorage.setItem('cash.yearKind', el.value); } catch {}
