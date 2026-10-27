@@ -467,26 +467,55 @@ export function activity() {
     <div id="tx-list">${txList()}</div>`;
 }
 
+// Searching looks across every month (with totals for this month, the last
+// 3 months, this year and all time); "This month" narrows it back down.
 export function txList() {
   const f = view.filters;
   const q = f.q.trim().toLowerCase();
-  const txs = txInPeriod(periodOf(view.period)).filter(t =>
+  const allMonths = !!q && f.scope !== 'month';
+  const match = t =>
     (f.type === 'all' || t.type === f.type) &&
     (!f.categoryId || t.categoryId === f.categoryId || t.splits?.some(s => s.categoryId === f.categoryId)) &&
     (!f.member || t.member === f.member) &&
-    (!q || t.desc.toLowerCase().includes(q) || (t.note || '').toLowerCase().includes(q) || String(t.amount).includes(q)));
-  if (!txs.length) return `<div class="card">${empty('🔍', 'No payments match for this month.', `<br><button class="btn sm" data-action="openAdd">Add one</button>`)}</div>`;
+    (!q || t.desc.toLowerCase().includes(q) || (t.bankDesc || '').toLowerCase().includes(q) || (t.note || '').toLowerCase().includes(q) || String(t.amount).includes(q));
+  const pool = allMonths ? S.list('transactions').sort((a, b) => b.date.localeCompare(a.date)) : txInPeriod(periodOf(view.period));
+  const txs = pool.filter(match);
+  let html = q ? `<div class="seg small search-scope" role="radiogroup" aria-label="Search where">${[['all', 'All months'], ['month', 'This month']].map(([v, l]) =>
+    `<label><input type="radio" name="fscope" value="${v}" ${(allMonths ? 'all' : 'month') === v ? 'checked' : ''} data-change="filterScope"><span>${l}</span></label>`).join('')}</div>` : '';
+  if (!txs.length) return html + `<div class="card">${empty('🔍', allMonths ? 'Nothing matches that search.' : 'No payments match for this month.', `<br><button class="btn sm" data-action="openAdd">Add one</button>`)}</div>`;
   const t = totals(txs);
-  let html = `<div class="stat-row"><div class="stat"><small>${txs.length} payments · in</small><b class="pos">${money(t.in)}</b></div><div class="stat"><small>Out</small><b>${money(t.out)}</b></div></div>`;
-  if (q) html += `<div class="btn-row"><button class="btn sm" data-action="moveSearch">🏷️ Move all “${esc(f.q.trim())}” payments to a category…</button></div>`;
-  const days = {};
-  txs.forEach(x => (days[x.date] ||= []).push(x));
-  for (const [d, list] of Object.entries(days)) {
-    const dayOut = sum(list.filter(x => x.type === 'out' && !S.isTransfer(x.categoryId)), x => x.amount);
-    html += `<div class="day-head"><span>${relDay(d)}</span><span>${dayOut ? '−' + money(dayOut) : ''}</span></div><div class="card list">${list.map(txRow).join('')}</div>`;
+  if (q) {
+    // totals over time for whatever is searched
+    const every = S.list('transactions').filter(match);
+    const cur = periodOf(currentPeriodKey()), three = periodOf(shiftPeriod(cur.key, -2));
+    const yStart = new Date(new Date().getFullYear(), 0, 1);
+    const spent = list => { const x = totals(list); return x.out || x.in; };
+    const since = d => every.filter(x => { const dd = fromISO(x.date); return dd >= d && dd < cur.end; });
+    html += `<section class="card search-sum">
+      <h2>“${esc(f.q.trim())}”</h2>
+      <div class="sum-grid">
+        <div><small>This month</small><b>${money(spent(since(cur.start)))}</b></div>
+        <div><small>Last 3 months</small><b>${money(spent(since(three.start)))}</b></div>
+        <div><small>This year</small><b>${money(spent(since(yStart)))}</b></div>
+        <div><small>All time</small><b>${money(spent(every))}</b></div>
+      </div>
+      <p class="small muted">${every.length} payment${every.length === 1 ? '' : 's'}${every.length ? ` since ${fmtDate(every.map(x => x.date).sort()[0], { day: 'numeric', month: 'short', year: 'numeric' })}` : ''} · about ${money(spent(since(three.start)) / 3, { whole: true })} a month lately</p>
+      <button class="btn sm" data-action="moveSearch">🏷️ Move all “${esc(f.q.trim())}” payments to a category…</button>
+    </section>`;
+  } else {
+    html += `<div class="stat-row"><div class="stat"><small>${txs.length} payments · in</small><b class="pos">${money(t.in)}</b></div><div class="stat"><small>Out</small><b>${money(t.out)}</b></div></div>`;
+  }
+  const groups = {};
+  txs.forEach(x => (groups[allMonths ? x.date.slice(0, 7) : x.date] ||= []).push(x));
+  for (const [k, list] of Object.entries(groups)) {
+    const out = sum(list.filter(x => x.type === 'out' && !S.isTransfer(x.categoryId)), x => x.amount);
+    const head = allMonths ? periodOf(k).label : relDay(k);
+    html += `<div class="day-head"><span>${head}</span><span>${out ? '−' + money(out) : ''}</span></div><div class="card list">${list.map(allMonths ? txRowDated : txRow).join('')}</div>`;
   }
   return html;
 }
+// In an all-months search each row shows its date.
+const txRowDated = t => txRow(t).replace('<small>', `<small>${fmtDate(t.date, { day: 'numeric', month: 'short' })} · `);
 
 // ---------- Plan: budget, bills, wages ----------
 export function plan(tab = view.planTab) {
