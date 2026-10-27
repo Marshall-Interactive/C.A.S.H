@@ -78,3 +78,43 @@ export function inOutBars(rows, { h = 180, names = ['in', 'out'] } = {}) {
   });
   return `<svg class="axis" viewBox="0 0 ${W} ${h}" role="img" aria-label="Money in and out by month">${s}</svg>`;
 }
+
+// A balance climbing over time: soft area, a line that draws itself in,
+// flags where milestones were passed and a glowing dot for today.
+let growId = 0;
+export function growthChart(points, { flags = [], h = 170 } = {}) {
+  if (points.length < 2) return '';
+  const W = 340, padL = 44, padR = 12, padT = 14, padB = 22;
+  const t0 = +new Date(points[0].date), t1 = +new Date(points[points.length - 1].date);
+  const lo = Math.min(...points.map(p => p.v)), hi = Math.max(...points.map(p => p.v));
+  const span = hi - lo || hi || 1;
+  const min = Math.max(0, lo - span * 0.15), max = niceMax(hi + span * 0.08);
+  const x = d => padL + ((+new Date(d) - t0) / (t1 - t0 || 1)) * (W - padL - padR);
+  const y = v => padT + (1 - (v - min) / (max - min || 1)) * (h - padT - padB);
+  // a step line: the balance holds until the next recorded day
+  let line = `M${x(points[0].date)} ${y(points[0].v)}`;
+  for (let i = 1; i < points.length; i++) line += `H${x(points[i].date)}V${y(points[i].v)}`;
+  const area = `${line}V${h - padB}H${x(points[0].date)}Z`;
+  const id = 'grow' + ++growId;
+  const ticks = [min, (min + max) / 2, max];
+  const months = [];
+  for (let d = new Date(t0); d <= new Date(t1); d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+    const m1 = new Date(d.getFullYear(), d.getMonth(), 1);
+    if (+m1 >= t0) months.push(m1);
+  }
+  const step = Math.ceil(months.length / 6) || 1;
+  const last = points[points.length - 1];
+  return `<svg class="axis growth" viewBox="0 0 ${W} ${h}" role="img" aria-label="Balance over time">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--s3)" stop-opacity=".35"/><stop offset="1" stop-color="var(--s3)" stop-opacity="0"/></linearGradient></defs>
+    ${ticks.map(t => `<line class="grid-line" x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}"/><text x="${padL - 6}" y="${y(t) + 3}" text-anchor="end">${moneyShort(t)}</text>`).join('')}
+    ${months.filter((_, i) => i % step === 0).map(m => `<text x="${x(m)}" y="${h - 6}" text-anchor="middle">${m.toLocaleDateString('en-AU', { month: 'short' })}</text>`).join('')}
+    <path d="${area}" fill="url(#${id})" class="grow-area"/>
+    <path d="${line}" fill="none" stroke="var(--s3)" stroke-width="2.5" stroke-linejoin="round" pathLength="100" class="grow-line"/>
+    ${flags.map(f => `<g class="grow-flag" data-tip="Passed ${esc(money(f.m, { whole: true }))}|${esc(new Date(f.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }))}">
+      <line x1="${x(f.date)}" x2="${x(f.date)}" y1="${y(f.m)}" y2="${y(f.m) - 16}" stroke="var(--gold)" stroke-width="1.5"/>
+      <circle cx="${x(f.date)}" cy="${y(f.m) - 18}" r="7" fill="var(--gold)"/><text x="${x(f.date)}" y="${y(f.m) - 15}" text-anchor="middle" class="flag-t">★</text></g>`).join('')}
+    ${points.map(p => `<rect x="${x(p.date) - 3}" y="${padT}" width="6" height="${h - padT - padB}" fill="transparent" data-tip="${esc(new Date(p.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }))}|${esc(money(p.v))}"/>`).join('')}
+    <circle cx="${x(last.date)}" cy="${y(last.v)}" r="9" fill="var(--s3)" opacity=".25" class="grow-pulse"/>
+    <circle cx="${x(last.date)}" cy="${y(last.v)}" r="4.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="2"/>
+  </svg>`;
+}
