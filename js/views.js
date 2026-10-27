@@ -365,12 +365,26 @@ export function home() {
   const spent = spentByCategory(txs);
   const outCats = S.list('categories').filter(c => (c.type || 'out') === 'out');
 
+  // Same point last month: spending up to the same day of the month.
+  let pace = '';
+  if (p.key === currentPeriodKey()) {
+    const day = Math.floor((new Date() - p.start) / 864e5);
+    const lp = periodOf(shiftPeriod(p.key, -1));
+    const cut = new Date(lp.start.getFullYear(), lp.start.getMonth(), lp.start.getDate() + day + 1);
+    const lastOut = totals(txInPeriod(lp).filter(x => fromISO(x.date) < cut)).out;
+    const diff = lastOut - t.out;
+    if (lastOut > 0 && Math.abs(diff) >= 1) pace = `<div class="pace ${diff >= 0 ? 'up' : 'down'}">${diff >= 0 ? '🙌' : '👀'} ${diff >= 0
+      ? `<b>${money(diff, { whole: true })} less</b> spent than this time last month`
+      : `<b>${money(-diff, { whole: true })} more</b> spent than this time last month`}</div>`;
+  }
+
   // Hero
   const hero = `<section class="card hero span2">
     <div class="hero-top"><span class="label">${left >= 0 ? 'Left this month' : 'Overspent this month'}</span><span class="label">${esc(p.range)}</span></div>
     <div class="big">${money(left)}</div>
     <div class="sub">${useExpected ? `Counting ${money(expIn - t.in, { whole: true })} of wages still to come` : base ? `You've spent ${Math.round(pct)}% of what came in` : 'Add your wages to see what is left'}</div>
     <div class="meter" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
+    ${pace}
     <div class="hero-stats">
       <button class="hero-stat" data-action="moneyIn"><small>↓ Money in ›</small><b>${money(t.in)}</b><small>${expIn ? 'of ' + money(expIn) + ' expected' : 'this month'}</small></button>
       <div class="hero-stat"><small>↑ Money out</small><b>${money(t.out)}</b><small>${t.count} payments</small></div>

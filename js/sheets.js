@@ -45,8 +45,32 @@ const actionsRow = (isNew, delAction, id, label = 'Save') => `<div class="form-a
   <button class="btn primary" type="submit">${isNew ? 'Add' : label}</button></div>`;
 
 // ---------- Add menu ----------
+// Things you add by hand again and again ("Coffee $5.50"), most frequent first.
+function usualSpends() {
+  const since = Date.now() - 90 * 864e5, seen = {};
+  for (const t of S.list('transactions')) {
+    if (t.source !== 'manual' || t.type !== 'out' || t.splits?.length > 1 || new Date(t.date) < since) continue;
+    const k = `${t.desc.trim().toLowerCase()}|${t.amount}`;
+    (seen[k] ||= { desc: t.desc.trim(), amount: t.amount, categoryId: t.categoryId, n: 0 }).n++;
+  }
+  return Object.values(seen).filter(x => x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 6);
+}
+
+function repeatSpend(el) {
+  const tx = S.upsert('transactions', {
+    type: 'out', amount: +el.dataset.amount, desc: el.dataset.desc, date: todayISO(), categoryId: el.dataset.cat,
+    member: S.settings().currentMember, source: 'manual',
+  });
+  closeSheet();
+  buzz(20);
+  toast(`Added ${el.dataset.desc} ${money(tx.amount)}`, { label: 'Undo', fn: () => S.remove('transactions', tx.id) });
+}
+
 export function addMenu() {
+  const usual = usualSpends();
   openSheet(`${sheetHead('Add to C.A.S.H', 'How would you like to add it?')}
+  ${usual.length ? `<div class="field"><span>One tap — add again today</span><div class="chips repeat">${usual.map(u =>
+    `<button class="chip" data-action="repeatSpend" data-desc="${esc(u.desc)}" data-amount="${u.amount}" data-cat="${u.categoryId}">${S.cat(u.categoryId).icon} ${esc(u.desc)} <b>${money(u.amount)}</b></button>`).join('')}</div></div>` : ''}
   <div class="add-grid">
     <button class="add-tile" data-action="newTx" data-type="out"><span class="add-ic">${icon('pen')}</span><b>Expense</b><small>Spent while out</small></button>
     <button class="add-tile" data-action="scan" data-mode="receipt"><span class="add-ic gold">${icon('camera')}</span><b>Scan receipt</b><small>Photo → split by category</small></button>
@@ -721,6 +745,7 @@ export const actions = {
   toggleIncome: el => toggleScheduled('incomes', 'received', el.dataset.id, el.dataset.date),
   newCategory: el => categoryForm(null, el.dataset.group),
   rules: () => rulesSheet(),
+  repeatSpend: el => repeatSpend(el),
   newRule: () => similarSheet({ title: 'New rule' }),
   deleteRule: el => { removeRule(el.dataset.key); S.save(); rulesSheet(); toast('Rule deleted'); },
   moveSearch: () => similarSheet({ text: view.filters.q.trim(), title: `Move “${view.filters.q.trim()}” payments` }),
