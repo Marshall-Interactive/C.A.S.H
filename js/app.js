@@ -6,6 +6,7 @@ import * as V from './views.js';
 import * as Sheets from './sheets.js';
 import * as Flows from './flows.js';
 import { demoState } from './demo.js';
+import { thisYear } from './year.js';
 import * as Sync from './sync.js';
 
 const actions = {
@@ -17,6 +18,10 @@ const actions = {
   thisPeriod: () => { resetPeriod(); render(); },
   pieDrill: el => { view.pieMode = 'categories'; view.pieGroup = el.dataset.id; render(); },
   moneyIn: () => openSheet(V.moneyInSheet()),
+  prevYear: () => { view.year = (view.year ?? thisYear()) - 1; render(); },
+  nextYear: () => { view.year = (view.year ?? thisYear()) + 1; render(); },
+  thisYear: () => { view.year = thisYear(); render(); },
+  openMonth: el => { view.period = el.dataset.key; location.hash = '#home'; window.scrollTo(0, 0); },
   spendList: el => openSheet(V.spendSheet(el.dataset.kind, el.dataset.id)),
   pieDrillFromSheet: el => { closeSheet(); view.pieMode = 'categories'; view.pieGroup = el.dataset.id; setTimeout(render, 60); },
   catActivity: el => {
@@ -156,6 +161,16 @@ const changes = {
     try { localStorage.setItem('cash.pieMode', el.value); } catch {}
     render();
   },
+  yearKind: el => {
+    view.yearKind = el.value; view.year = thisYear(el.value);
+    try { localStorage.setItem('cash.yearKind', el.value); } catch {}
+    render();
+  },
+  yearView: el => {
+    view.yearView = el.value;
+    try { localStorage.setItem('cash.yearView', el.value); } catch {}
+    render();
+  },
   filterType: el => { view.filters.type = el.value; $('#tx-list').innerHTML = V.txList(); },
   filterCat: el => { view.filters.categoryId = el.value; $('#tx-list').innerHTML = V.txList(); },
   filterMember: el => { view.filters.member = el.value; $('#tx-list').innerHTML = V.txList(); },
@@ -194,6 +209,7 @@ function render() {
   const { r, sub } = route();
   if (r !== lastRoute) V.replayPie(); // coming back to Home plays the pie again
   lastRoute = r;
+  if (r === 'plan' && sub) view.planTab = sub;
   $('#topbar').innerHTML = V.topbar(r);
   const main = $('#view');
   const scroll = window.scrollY;

@@ -69,8 +69,9 @@ export function inOutBars(rows, { h = 180 } = {}) {
     <text x="${padL - 6}" y="${y(t) + 3}" text-anchor="end">${moneyShort(t)}</text>`).join('');
   rows.forEach((r, i) => {
     const gx = padL + i * groupW + (groupW - barW * 2 - gap) / 2;
-    s += `<path d="${barPath(gx, y(r.in), barW, plotH + padT - y(r.in))}" fill="var(--s1)"/>`;
-    s += `<path d="${barPath(gx + barW + gap, y(r.out), barW, plotH + padT - y(r.out))}" fill="var(--s2)"/>`;
+    const op = r.forecast ? ' opacity=".35"' : '';
+    s += `<path d="${barPath(gx, y(r.in), barW, plotH + padT - y(r.in))}" fill="var(--s1)"${op}/>`;
+    s += `<path d="${barPath(gx + barW + gap, y(r.out), barW, plotH + padT - y(r.out))}" fill="var(--s2)"${op}/>`;
     s += `<text x="${gx + barW + gap / 2}" y="${h - 6}" text-anchor="middle">${esc(r.label)}</text>`;
     s += `<rect x="${padL + i * groupW}" y="${padT}" width="${groupW}" height="${plotH}" fill="transparent"
       data-tip="${esc(r.label)}: in ${esc(money(r.in, { whole: true }))} · out ${esc(money(r.out, { whole: true }))}|${esc(money(r.in - r.out, { sign: true, whole: true }))}"/>`;
