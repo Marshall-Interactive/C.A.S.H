@@ -92,7 +92,7 @@ export function parsePdfStatement(lines, { credit = false } = {}) {
     }
   }
 
-  const rows = [];
+  const rows = [], days = {};
   for (const r of raw) {
     const a = r.amounts;
     if (!a.length) continue;
@@ -105,9 +105,10 @@ export function parsePdfStatement(lines, { credit = false } = {}) {
     else if (cols?.debit && cols?.credit) type = Math.abs(tx.x - cols.credit) < Math.abs(tx.x - cols.debit) ? 'in' : 'out';
     else if (credit) type = tx.cr || tx.neg ? 'in' : 'out';
     else type = tx.cr ? 'in' : 'out';
-    if (balance != null) prevBal = balance;
+    if (balance != null) { prevBal = balance; days[r.date] = round2(balance); }
     rows.push({ date: r.date, desc: (r.desc || 'Payment').slice(0, 80), amount: round2(tx.v), type });
   }
   const last = closing ?? prevBal;
-  return { rows, balance: last != null ? { date: rows.length ? rows[rows.length - 1].date : todayISO(), value: round2(last) } : null };
+  return { rows, days: Object.entries(days).map(([date, value]) => ({ date, value })),
+    balance: last != null ? { date: rows.length ? rows[rows.length - 1].date : todayISO(), value: round2(last) } : null };
 }

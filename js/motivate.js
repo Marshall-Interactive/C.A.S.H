@@ -54,7 +54,7 @@ export function streakCard() {
 // First 10 days of a month, if last month had money left over: offer to put some in a pot.
 export function sweepCard() {
   const cur = periodOf(currentPeriodKey());
-  if ((new Date() - cur.start) / 864e5 > 10 || !S.list('pots').length) return '';
+  if ((new Date() - cur.start) / 864e5 > 10 || !S.list('pots').some(p => !p.linkTo)) return '';
   const last = shiftPeriod(cur.key, -1);
   let done = '';
   try { done = localStorage.getItem('cash.swept') || ''; } catch {}

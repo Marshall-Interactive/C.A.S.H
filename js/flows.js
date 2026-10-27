@@ -5,7 +5,8 @@ import { esc, money, todayISO, fromISO, parseAmount, round2, parseDate, titleCas
 import { openSheet, closeSheet, sheetHead, toast, icon } from './ui.js';
 import { guessCategory, learn, merchantName } from './categorise.js';
 import { findDuplicate, isMine, matchBill, matchIncome, linkOccurrence, relinkIncomes, learnPayName } from './calc.js';
-import { catOptions, recordBalance } from './sheets.js';
+import { catOptions, recordBalance, recordDays, celebrateSavings } from './sheets.js';
+import { snapshot } from './offset.js';
 import { findRegular, nextDate } from './detect.js';
 
 const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
@@ -346,6 +347,18 @@ function latestBalance(rows, m) {
   return { date: latest.date, value: round2(parseAmount(latest.raw)) };
 }
 
+// Each day's closing balance from the statement's balance column (for the growth chart).
+function dailyBalances(rows, m) {
+  if (m.balance < 0) return [];
+  const withBal = rows.map((r, idx) => ({ date: parseDate(r[m.date]), raw: (r[m.balance] || '').trim(), idx }))
+    .filter(x => x.date && /\d/.test(x.raw));
+  if (!withBal.length) return [];
+  const newestFirst = withBal[0].date > withBal[withBal.length - 1].date;
+  const days = {};
+  for (const x of newestFirst ? withBal.slice().reverse() : withBal) days[x.date] = round2(parseAmount(x.raw));
+  return Object.entries(days).map(([date, value]) => ({ date, value }));
+}
+
 function applyMapping(rows, m) {
   const res = [];
   for (const r of rows) {
@@ -419,18 +432,18 @@ function submitCsvMap(d, f) {
   const rows = applyMapping(csvState.csv.rows, m);
   if (!rows.length) return toast('No payments found with those columns');
   const accountId = f.accountId.value;
-  review(rows, 'csv', { accountId, balance: accountId ? latestBalance(csvState.csv.rows, m) : null });
+  review(rows, 'csv', { accountId, balance: accountId ? latestBalance(csvState.csv.rows, m) : null, days: accountId ? dailyBalances(csvState.csv.rows, m) : [] });
 }
 
 // ================= shared review list (screenshot + CSV) =================
 let pending = [];
 let pendingMeta = {};
 
-function review(rows, source, { editable = false, accountId = '', balance = null } = {}) {
+function review(rows, source, { editable = false, accountId = '', balance = null, days = [] } = {}) {
   const pool = S.list('transactions');
   const acc = accountId ? S.byId('accounts', accountId.split(':')[0]) : null;
   const [accId, part] = (accountId || '').split(':');
-  pendingMeta = { accountId: accId, part, balance };
+  pendingMeta = { accountId: accId, part, balance, days };
   // Transfers between your own accounts: the same amount going out of one and into another.
   const others = S.list('transactions').filter(t => t.accountId && t.accountId !== accId);
   const last4s = S.list('accounts').flatMap(a => [a.last4, a.loanLast4]).filter(Boolean);
@@ -525,10 +538,13 @@ function submitReview(d, f) {
     if (p.incomeId) { const inc = S.byId('incomes', p.incomeId); learnPayName(inc, saved); linkOccurrence(inc, 'received', saved); }
     n++;
   }
-  const { accountId, balance, part } = pendingMeta;
+  const { accountId, balance, part, days } = pendingMeta;
   const acc = accountId && S.byId('accounts', accountId);
   relinkIncomes();
-  if (acc && balance) recordBalance(acc, part === 'loan' ? { loan: Math.abs(balance.value) } : { balance: acc.kind === 'credit' ? Math.abs(balance.value) : balance.value }, balance.date, { silent: true });
+  const before = accountId && part !== 'loan' ? snapshot(accountId) : null;
+  if (acc && days?.length) recordDays(acc, days, part === 'loan' ? 'loan' : 'balance');
+  if (acc && balance) recordBalance(S.byId('accounts', accountId), part === 'loan' ? { loan: Math.abs(balance.value) } : { balance: acc.kind === 'credit' ? Math.abs(balance.value) : balance.value }, balance.date, { silent: true });
+  if (before) setTimeout(() => celebrateSavings(before), 1400);
   S.save();
   pending = [];
   pendingMeta = {};
@@ -636,7 +652,7 @@ function parsePdf(accountValue) {
 function submitPdfMap(d, f) {
   const p = parsePdf(f.accountId.value);
   if (!p.rows.length) return toast('No payments found in this PDF — try the CSV export instead');
-  review(p.rows, 'pdf', { accountId: f.accountId.value, balance: f.accountId.value ? p.balance : null });
+  review(p.rows, 'pdf', { accountId: f.accountId.value, balance: f.accountId.value ? p.balance : null, days: f.accountId.value ? p.days || [] : [] });
 }
 
 export const forms = { receipt: saveReceipt, csvMap: submitCsvMap, review: submitReview, regular: saveRegular, pdfMap: submitPdfMap };

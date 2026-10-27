@@ -1,14 +1,15 @@
 // The main screens. Each returns an HTML string for <main>.
 import * as S from './store.js';
-import { esc, money, sum, periodOf, shiftPeriod, relDay, fmtDate, perMonth, FREQS, fromISO, todayISO, round2, currentPeriodKey } from './util.js';
+import { esc, money, sum, periodOf, shiftPeriod, relDay, fmtDate, perMonth, FREQS, fromISO, todayISO, round2, currentPeriodKey, toISO } from './util.js';
 import { txInPeriod, spendLines, spentByCategory, totals, billsInPeriod, incomesInPeriod, expectedIn, nextDue, incomeAmount, doneTx } from './calc.js';
-import { donut, inOutBars } from './charts.js';
+import { donut, inOutBars, growthChart } from './charts.js';
 import { icon, view, sheetHead } from './ui.js';
 import * as Sync from './sync.js';
 import { yearTab, yearCard } from './year.js';
 import { streakCard, sweepCard } from './motivate.js';
 import { remindersOn, canNotify } from './reminders.js';
 import { cardLines, cardSheetHtml } from './card.js';
+import * as Off from './offset.js';
 
 export const TITLES = { home: 'Home', activity: 'Activity', plan: 'Plan', savings: 'Savings', settings: 'Settings' };
 
@@ -640,7 +641,8 @@ function wagesTab() {
 }
 
 // ---------- Savings ----------
-export const potSaved = pot => sum(pot.entries || [], e => e.amount);
+// Pots linked to the offset take their share of its balance; the rest are filled by hand.
+export const potSaved = pot => (pot.linkTo ? Off.allocation(pot.linkTo).map[pot.id] ?? 0 : sum(pot.entries || [], e => e.amount));
 export const potColor = p => `var(--s${p.slot || 3})`;
 export const MILESTONES = [25, 50, 75, 100];
 export const potPct = p => (+p.goal ? Math.max(0, (potSaved(p) / p.goal) * 100) : 0);
@@ -698,17 +700,21 @@ function savingsStats(pots) {
 
 export function savings() {
   const pots = S.list('pots');
-  const total = sum(pots, potSaved);
+  const byHand = pots.filter(p => !p.linkTo);
+  const saveAccs = Off.savingsAccounts().filter(a => a.balance != null);
+  const total = sum(byHand, potSaved) + sum(saveAccs, a => Math.max(0, a.balance));
   const goal = sum(pots, p => +p.goal || 0);
-  const pct = goal ? (total / goal) * 100 : 0;
+  const pct = goal ? (sum(pots, p => Math.min(potSaved(p), +p.goal || 0)) / goal) * 100 : 0;
   const reached = pots.filter(p => p.goal && potSaved(p) >= p.goal).length;
-  const st = savingsStats(pots);
+  const st = savingsStats(byHand);
+  const lastMonthEnd = toISO(new Date(periodOf(currentPeriodKey()).start - 864e5));
+  st.thisMonth += sum(saveAccs, a => { const b = Off.balanceOn(a, lastMonthEnd); return b == null ? 0 : a.balance - b; });
   const accs = S.list('accounts');
   return `<div class="grid">
     <section class="card save-hero">
       <div class="save-hero-ring">${ring(pct)}<div class="ring-label"><b>${goal ? Math.round(pct) + '%' : '🐷'}</b><small>${goal ? 'of goals' : 'start saving'}</small></div></div>
       <div class="save-hero-main">
-        <span class="label">Total saved</span>
+        <span class="label">Total saved${saveAccs.length ? ` <small class="incl">incl. ${saveAccs.map(a => esc(a.name)).join(' & ')}</small>` : ''}</span>
         <div class="big" data-count="${round2(total)}">${money(total)}</div>
         <div class="save-chips">
           <span class="save-chip ${st.thisMonth > 0 ? 'up' : ''}">${st.thisMonth >= 0 ? '▲' : '▼'} ${money(Math.abs(st.thisMonth), { whole: true })} this month</span>
@@ -717,6 +723,8 @@ export function savings() {
         </div>
       </div>
     </section>
+    ${saveAccs.map(growthCard).join('')}
+    ${saveAccs.map(carveCard).join('')}
     <div class="section-title first"><span>Savings pots</span><span><button class="link" data-action="newPot">${icon('plus', 14)} New pot</button></span></div>
     <div class="pots">${pots.map(potCard).join('') || `<div class="card">${empty('🫙', 'No pots yet — start one for an Emergency fund, Holiday or Christmas and watch it fill up.', `<br><button class="btn primary sm" data-action="newPot">Start a pot</button>`)}</div>`}</div>
     ${st.feed.length ? `<div class="section-title"><span>Recent savings</span></div>
@@ -727,6 +735,64 @@ export function savings() {
     <div class="section-title"><span>Accounts</span><span><button class="link" data-action="newAccount">${icon('plus', 14)} Add account</button></span></div>
     <div class="pots">${accs.map(accountCard).join('') || `<div class="card">${empty('🏦', 'Add your offset account and credit card to track their balances.')}</div>`}</div>
   </div>`;
+}
+
+// ---- the offset as savings ----
+function growthCard(a) {
+  const pts = Off.series(a);
+  const now = a.balance;
+  const yStart = new Date(new Date().getFullYear(), 0, 1);
+  const lastMonthEnd = toISO(new Date(periodOf(currentPeriodKey()).start - 864e5));
+  const atMonth = Off.balanceOn(a, lastMonthEnd), atYear = Off.balanceOn(a, toISO(new Date(yStart - 864e5))) ?? pts[0]?.v;
+  const flags = Off.crossings(pts);
+  const next = Off.nextMilestone(now);
+  const prevM = [...Off.MILESTONES].reverse().find(m => m <= now) || 0;
+  const toNext = next ? ((now - prevM) / (next - prevM)) * 100 : 100;
+  const interest = Off.interestSaved(a, yStart);
+  const chip = (v, label) => v == null ? '' : `<span class="save-chip ${v >= 0 ? 'up' : 'down'}">${v >= 0 ? '▲' : '▼'} ${money(Math.abs(v), { whole: true })} ${label}</span>`;
+  return `<section class="card grow-card">
+    <div class="grow-head"><div><span class="label">🏦 ${esc(a.name)}</span>
+      <div class="big" data-count="${round2(now)}" data-count-key="grow-${a.id}">${money(now)}</div></div>
+      <button class="link small" data-action="statement" data-id="${a.id}">📄 Statement</button></div>
+    <div class="save-chips">${chip(atMonth == null ? null : now - atMonth, 'this month')}${chip(atYear == null ? null : now - atYear, 'this year')}
+      ${interest ? `<span class="save-chip gold">💰 ${money(interest, { whole: true })} interest saved this year</span>` : ''}</div>
+    ${pts.length >= 2 ? `<div class="chart">${growthChart(pts, { flags })}</div>` : `<p class="small muted">Your growth chart builds as balances come in — import a statement with a balance column, or tap Update now and then.</p>`}
+    ${next ? `<div class="next-ms"><div class="next-ms-top"><span>Next milestone <b>${money(next, { whole: true })}</b></span><span>${money(next - now, { whole: true })} to go</span></div>
+      <div class="bar"><i class="good" style="width:${Math.max(2, toNext)}%"></i></div></div>` : ''}
+    ${flags.length ? `<div class="ms-done">${flags.slice(-4).reverse().map(f => `<span class="ms-badge">★ ${money(f.m, { whole: true })} <small>${fmtDate(f.date, { month: 'short', year: '2-digit' })}</small></span>`).join('')}</div>` : ''}
+    ${!a.rate && a.kind === 'offset' ? `<p class="small muted">Add your home-loan rate (⚙️ on the account) to see the interest it saves.</p>` : ''}
+  </section>`;
+}
+
+function carveCard(a) {
+  const linked = Off.linkedPots(a.id);
+  if (!linked.length) return a.kind === 'offset' ? `<section class="card carve-card empty-carve">
+      <h2>Carve up your ${esc(a.name)}</h2>
+      <p class="small">Split the balance into goals — an emergency fund, a holiday, Christmas. The jars fill on their own as the offset grows.</p>
+      <button class="btn primary sm" data-action="newPot" data-link="${a.id}">＋ Add a goal to the offset</button></section>` : '';
+  const al = Off.allocation(a.id);
+  const total = al.balance || 1;
+  const segs = [...linked.map(p => ({ p, v: al.map[p.id] || 0, color: potColor(p) })), { v: al.free, color: 'var(--line-2)', free: true }].filter(s => s.v > 0.004);
+  return `<section class="card carve-card">
+    <h2>Your ${esc(a.name)}, carved up</h2>
+    <div class="carve-bar">${segs.map(s => `<i style="--w:${(s.v / total) * 100}%;background:${s.color}" data-tip="${s.free ? 'Free' : esc(s.p.name)}|${esc(money(s.v))}"></i>`).join('')}</div>
+    <div class="carve-legend">${linked.map((p, i) => {
+      const v = al.map[p.id] || 0, full = v >= (+p.goal || 0);
+      return `<div class="carve-row"><i style="background:${potColor(p)}"></i><span>${i + 1}. ${p.icon || '🐷'} ${esc(p.name)}</span><b>${money(v, { whole: true })}</b><small>${full ? '✓ full' : `of ${money(p.goal, { whole: true })}`}</small></div>`;
+    }).join('')}
+      <div class="carve-row"><i style="background:var(--line-2)"></i><span>Free to use</span><b>${money(al.free, { whole: true })}</b><small></small></div></div>
+    <button class="link small" data-action="newPot" data-link="${a.id}">＋ Add another goal</button>
+  </section>`;
+}
+
+function linkedLine(p) {
+  const acc = S.byId('accounts', p.linkTo);
+  const list = Off.linkedPots(p.linkTo), i = list.findIndex(x => x.id === p.id);
+  const saved = potSaved(p), goal = +p.goal || 0;
+  const before = list.slice(0, i).find(x => potSaved(x) < (+x.goal || 0));
+  const note = saved >= goal ? '' : before ? `Fills once ${esc(before.name)} is full` : `The next ${money(goal - saved, { whole: true })} the offset grows goes here`;
+  return `<div class="linked-line"><span class="small">🏦 Part of ${esc(acc?.name || 'your offset')} · fills ${['1st', '2nd', '3rd'][i] || `${i + 1}th`}${note ? ` · ${note}` : ''}</span>
+    ${i > 0 ? `<button class="btn sm ghost" data-action="potUp" data-id="${p.id}">↑ Fill sooner</button>` : ''}</div>`;
 }
 
 function potCard(p) {
@@ -756,9 +822,9 @@ function potCard(p) {
     </div>
     ${pace}
     ${shareLine}
-    <div class="quick-add">${[20, 50, 100].map(a => `<button class="btn sm quick" data-action="potQuick" data-id="${p.id}" data-amt="${a}">+${money(a, { whole: true })}</button>`).join('')}
+    ${p.linkTo ? linkedLine(p) : `<div class="quick-add">${[20, 50, 100].map(a => `<button class="btn sm quick" data-action="potQuick" data-id="${p.id}" data-amt="${a}">+${money(a, { whole: true })}</button>`).join('')}
       <button class="btn sm" data-action="potIn" data-id="${p.id}">＋ Other</button>
-      <button class="btn sm ghost" data-action="potOut" data-id="${p.id}" title="Take money out">−</button></div>
+      <button class="btn sm ghost" data-action="potOut" data-id="${p.id}" title="Take money out">−</button></div>`}
   </section>`;
 }
 

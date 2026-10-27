@@ -6,6 +6,7 @@ import { guessCategory, learn, hasText, similarText, addWordRule, removeRule, wo
 import { expectedIn, incomeAmount, relinkIncomes } from './calc.js';
 import { potSaved, potPct, MILESTONES } from './views.js';
 import { streakCats } from './motivate.js';
+import { savingsAccounts, linkedPots, snapshot, series, allocation, MILESTONES as BIG_MS } from './offset.js';
 
 // ---------- small form builders ----------
 export function catOptions(type, selected, { blank = '' } = {}) {
@@ -467,9 +468,10 @@ const nextPotSlot = () => {
   return POT_SLOTS.find(s => !used.has(s)) || POT_SLOTS[S.list('pots').length % POT_SLOTS.length];
 };
 
-export function potForm(p) {
+export function potForm(p, { linkTo = '' } = {}) {
   const isNew = !p;
-  p = p || { icon: '🐷', slot: nextPotSlot() };
+  p = p || { icon: '🐷', slot: nextPotSlot(), linkTo };
+  const accs = savingsAccounts();
   openSheet(`${sheetHead(isNew ? 'New savings pot' : 'Edit pot')}
   <form class="form" data-form="pot">
     <input type="hidden" name="id" value="${p.id || ''}">
@@ -481,18 +483,33 @@ export function potForm(p) {
       <label class="field"><span>Goal</span><input name="goal" inputmode="decimal" value="${p.goal || ''}" placeholder="e.g. 3000"></label>
       <label class="field"><span>By when</span><input name="targetDate" type="date" value="${p.targetDate || ''}"></label>
     </div>
-    ${isNew ? `<label class="field"><span>Already saved</span><input name="start" inputmode="decimal" placeholder="0"></label>` : ''}
+    ${accs.length ? `<label class="field"><span>Where's the money?</span><select name="linkTo">
+      <option value="">I'll add money to it myself</option>
+      ${accs.map(a => `<option value="${a.id}" ${p.linkTo === a.id ? 'selected' : ''}>It's part of my ${esc(a.name)} — fill it automatically</option>`).join('')}
+    </select></label>` : '<input type="hidden" name="linkTo" value="">'}
+    ${isNew ? `<label class="field start-field"><span>Already saved</span><input name="start" inputmode="decimal" placeholder="0"></label>` : ''}
+    <p class="small muted link-note">Linked goals share out the account's balance in order — the first fills up, then the next. Whatever's left is free to use.</p>
     ${actionsRow(isNew, 'deletePot', p.id)}
-  </form>`);
+  </form>`, {
+    onMount: sheet => {
+      const sel = $('[name=linkTo]', sheet);
+      const sync = () => { const on = !!sel.value; $('.start-field', sheet)?.toggleAttribute('hidden', on); $('.link-note', sheet).toggleAttribute('hidden', !on); };
+      sel?.addEventListener('change', sync);
+      if (sel) sync();
+    },
+  });
 }
 
 function savePot(d) {
-  const pot = { id: d.id || undefined, name: d.name.trim(), icon: d.icon.trim() || '🐷', goal: round2(parseAmount(d.goal)), targetDate: d.targetDate, slot: +d.slot || 3 };
-  if (!d.id) {
+  const pot = { id: d.id || undefined, name: d.name.trim(), icon: d.icon.trim() || '🐷', goal: round2(parseAmount(d.goal)), targetDate: d.targetDate, slot: +d.slot || 3, linkTo: d.linkTo || null };
+  if (pot.linkTo && !(pot.goal > 0)) return toast('Give it a goal so C.A.S.H knows how much of the balance to set aside');
+  const old = d.id ? S.byId('pots', d.id) : null;
+  if (pot.linkTo && old?.linkTo !== pot.linkTo) pot.fillOrder = Math.max(0, ...linkedPots(pot.linkTo).map(x => x.fillOrder ?? 0)) + 1;
+  if (!d.id && !pot.linkTo) {
     pot.entries = [];
     const start = round2(parseAmount(d.start));
     if (start) pot.entries.push({ id: S.uid(), date: todayISO(), amount: start, note: 'Starting balance', by: S.settings().currentMember, at: Date.now() });
-  }
+  } else if (!d.id) pot.entries = [];
   S.upsert('pots', pot);
   closeSheet();
   toast(d.id ? 'Pot saved' : `${pot.icon} ${pot.name} is ready — let's fill it!`);
@@ -576,7 +593,7 @@ function savePotEntry(d) {
 
 // ---------- Sweep last month's leftovers into a pot ----------
 function sweepForm(key, amount) {
-  const pots = S.list('pots');
+  const pots = S.list('pots').filter(p => !p.linkTo);
   const name = periodOf(key).start.toLocaleDateString('en-AU', { month: 'long' });
   openSheet(`${sheetHead(`Sweep ${name}'s leftovers`, 'Put it somewhere it can grow')}
   <form class="form" data-form="sweep">
@@ -748,9 +765,54 @@ function saveBalance(d) {
     vals.balance = round2(parseAmount(d.amount));
     if (a.kind === 'offset' && d.loan) vals.loan = owing(d.loan);
   }
+  const before = snapshot(a.id);
   recordBalance(a, vals, d.date || todayISO());
   closeSheet();
   toast(`${a.name} updated`);
+  if (before) setTimeout(() => celebrateSavings(before), 600);
+}
+
+// Many days of balances at once (from a statement's balance column).
+export function recordDays(a, days, field = 'balance') {
+  const hist = (a.history || []).map(h => ({ ...h }));
+  const credit = a.kind === 'credit';
+  for (const { date, value } of days) {
+    const v = field === 'loan' || credit ? Math.abs(value) : value;
+    const e = hist.find(h => h.date === date);
+    if (e) e[field] = v;
+    else hist.push({ date, [field]: v, by: S.settings().currentMember, imported: true });
+  }
+  hist.sort((x, y) => x.date.localeCompare(y.date));
+  // carry the other figure forward so every point has both
+  let lastBal = null, lastLoan = null;
+  for (const h of hist) { if (h.balance == null) h.balance = lastBal; else lastBal = h.balance; if (a.kind === 'offset') { if (h.loan == null && lastLoan != null) h.loan = lastLoan; else if (h.loan != null) lastLoan = h.loan; } }
+  const latest = hist[hist.length - 1];
+  return S.upsert('accounts', { ...a, history: hist.slice(-800), balance: latest.balance ?? a.balance, loanBalance: latest.loan ?? a.loanBalance ?? null }, { silent: true });
+}
+
+// After the offset (or a savings account) changes: milestones, jars filling, confetti.
+export function celebrateSavings(before) {
+  const a = S.byId('accounts', before.accId);
+  if (!a) return;
+  const max = Math.max(0, ...series(a).map(p => p.v));
+  const passed = BIG_MS.filter(m => before.max < m && max >= m);
+  const after = allocation(a.id).map;
+  // a linked goal that just filled gets the full party
+  for (const p of linkedPots(a.id)) {
+    const was = before.fills[p.id] || 0, now = after[p.id] || 0;
+    if (now > was && was < p.goal && now >= p.goal) { cheer(p, (was / p.goal) * 100); return; }
+  }
+  if (passed.length) {
+    confetti({ count: 200, colors: ['#1baf7a', '#f2b33d', '#ffd56e', '#ffffff'] });
+    buzz([60, 40, 120]);
+    return toast(`🎉 ${a.name} passed ${money(passed[passed.length - 1], { whole: true })}!`);
+  }
+  for (const p of linkedPots(a.id)) {
+    const was = before.fills[p.id] || 0, now = after[p.id] || 0;
+    if (now > was) { const msg = cheer(p, (was / p.goal) * 100); return toast(msg || `🫙 ${p.name} grew ${money(now - was, { whole: true })} with the offset`); }
+  }
+  const grew = (a.balance ?? 0) - before.balance;
+  if (grew >= 1) { confetti({ count: 50 }); toast(`🏦 ${a.name} up ${money(grew, { whole: true })}`); }
 }
 
 // ---------- First run ----------
@@ -807,7 +869,15 @@ export const actions = {
   editCategory: el => categoryForm(S.byId('categories', el.dataset.id)),
   deleteCategory: el => deleteCategory(el.dataset.id),
   budgetHelper: () => budgetHelper(),
-  newPot: () => potForm(),
+  newPot: el => potForm(null, { linkTo: el?.dataset?.link || '' }),
+  potUp: el => {
+    const p = S.byId('pots', el.dataset.id), list = linkedPots(p.linkTo), i = list.findIndex(x => x.id === p.id);
+    if (i < 1) return;
+    list.forEach((x, j) => { x.fillOrder = j; });
+    [list[i - 1].fillOrder, list[i].fillOrder] = [i, i - 1];
+    for (const x of [list[i - 1], list[i]]) S.upsert('pots', x, { silent: true });
+    S.save();
+  },
   editPot: el => potForm(S.byId('pots', el.dataset.id)),
   deletePot: el => { if (confirm('Delete this pot and its history?')) { S.remove('pots', el.dataset.id); closeSheet(); } },
   potIn: el => potEntryForm(S.byId('pots', el.dataset.id), 'in'),
