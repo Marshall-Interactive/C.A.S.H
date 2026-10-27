@@ -1,7 +1,7 @@
 // The main screens. Each returns an HTML string for <main>.
 import * as S from './store.js';
 import { esc, money, sum, periodOf, shiftPeriod, relDay, fmtDate, perMonth, FREQS, fromISO, todayISO, round2, currentPeriodKey } from './util.js';
-import { txInPeriod, spendLines, spentByCategory, totals, billsInPeriod, incomesInPeriod, expectedIn, nextDue, incomeAmount } from './calc.js';
+import { txInPeriod, spendLines, spentByCategory, totals, billsInPeriod, incomesInPeriod, expectedIn, nextDue, incomeAmount, doneTx } from './calc.js';
 import { donut, inOutBars } from './charts.js';
 import { icon, view, sheetHead } from './ui.js';
 import * as Sync from './sync.js';
@@ -192,7 +192,7 @@ function moneyPie(spent, t, base, txs) {
     segs = [
       { label: 'Spent', value: spending, color: 'var(--s2)', open: opens('spend') },
       { label: 'Saved', value: saved, color: 'var(--s3)', open: opens('saved') },
-      { label: 'Left over', value: left, color: 'var(--line-2)', open: 'data-action="moneyIn"' },
+      { label: 'Left over', value: left, color: 'var(--s1)', open: 'data-action="moneyIn"' },
     ].filter(s => s.value > 0.004);
     center = money(base, { whole: true }); sub = 'coming in';
     if (base && spending + saved > base) note = `<p class="status bad small">⚠ Spending is ${money(spending + saved - base)} more than came in</p>`;
@@ -546,11 +546,13 @@ function billsTab() {
 
 function wagesTab() {
   const p = periodOf(view.period);
-  const rows = incomesInPeriod(p);
+  // paydays that came in show what actually landed; the rest show the estimate
+  const rows = incomesInPeriod(p).map(r => ({ ...r, tx: r.done ? doneTx(r.item, 'received', r.date) : null }));
+  const amountOf = r => (r.tx ? r.tx.amount : incomeAmount(r.item));
   const received = sum(txInPeriod(p).filter(t => t.type === 'in' && !S.isTransfer(t.categoryId)), t => t.amount);
   return `<section class="card">
       <div class="stat-row">
-        <div class="stat"><small>Expected this month</small><b>${money(sum(rows, r => incomeAmount(r.item)))}</b></div>
+        <div class="stat"><small>Expected this month</small><b>${money(sum(rows, amountOf))}</b></div>
         <div class="stat"><small>Received so far</small><b class="pos">${money(received)}</b></div>
         <div class="stat"><small>Average a month</small><b>${money(sum(S.list('incomes'), i => perMonth(incomeAmount(i), i.frequency)), { whole: true })}</b></div>
       </div>
@@ -561,8 +563,8 @@ function wagesTab() {
       const i = r.item, d = fromISO(r.date);
       return `<div class="bill ${r.done ? 'is-paid' : ''}">
         <div class="due in"><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-AU', { month: 'short' })}</small></div>
-        <button class="bill-main" data-action="editIncome" data-id="${i.id}"><b>💵 ${esc(i.name)}</b><small>${esc(i.member || '')} · ${FREQS[i.frequency] || ''}</small></button>
-        <span class="tx-amt in">${i.varies ? '≈ ' : '+'}${money(incomeAmount(i))}</span>
+        <button class="bill-main" data-action="${r.tx ? 'editTx' : 'editIncome'}" data-id="${r.tx ? r.tx.id : i.id}"><b>💵 ${esc(i.name)}</b><small>${esc(i.member || '')} · ${r.tx ? (/^(csv|pdf)$/.test(r.tx.source) ? `🏦 Paid ${fmtDate(r.tx.date, { day: 'numeric', month: 'short' })}` : '✋ Ticked — estimate') : `Expected${i.varies ? ' · about' : ''}`}</small></button>
+        <span class="tx-amt in ${r.tx ? '' : 'est'}">${r.tx ? '+' : '≈ '}${money(amountOf(r))}</span>
         <button class="paid-btn ${r.done ? 'on' : ''}" data-action="toggleIncome" data-id="${i.id}" data-date="${r.date}" aria-label="${r.done ? 'Mark not received' : 'Mark received'}" title="${r.done ? 'Received — tap to undo' : 'Mark as received'}">${icon('check', 18)}</button>
       </div>`;
     }).join('') : empty('💵', 'Add each wage, Family Tax Benefit and other regular money coming in.')}</div>`;

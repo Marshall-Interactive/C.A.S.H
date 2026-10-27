@@ -145,14 +145,39 @@ function tolerance(coll, item) {
   if (coll === 'incomes') return item.varies || item.keywords ? Infinity : 0.25;
   return item.keywords ? 0.5 : 0.25;
 }
+// Statement names get cut short ("INLEX ENGINEERIN") or gain extra bits
+// ("… JAMES MARSHALL 0123"), so words match if one starts with the other.
+const sameWord = (a, b) => a === b || (Math.min(a.length, b.length) >= 5 && (a.startsWith(b) || b.startsWith(a)));
+export function nameMatches(keyword, desc) {
+  const d = ' ' + normalise(desc) + ' ';
+  if (d.includes(' ' + keyword + ' ') || d.includes(keyword)) return true;
+  const kw = [...words(keyword)], dw = [...words(desc)];
+  if (!kw.length) return false;
+  const hits = kw.filter(k => dw.some(w => sameWord(k, w))).length;
+  return hits >= Math.min(2, kw.length) && hits >= kw.length * 0.6;
+}
 function matchScheduled(coll, c) {
-  const d = ' ' + normalise(c.desc) + ' ';
   return S.list(coll).find(b => b.active !== false &&
-    keywordsOf(b).some(k => d.includes(k)) &&
+    keywordsOf(b).some(k => nameMatches(k, c.desc)) &&
     Math.abs(b.amount - c.amount) <= Math.max(1, b.amount * tolerance(coll, b)));
 }
 export const matchBill = c => c.type === 'out' ? matchScheduled('bills', c) : null;
-export const matchIncome = c => c.type === 'in' ? matchScheduled('incomes', c) : null;
+// Pay with no statement name yet: the one wage due around then, roughly the
+// right amount (closer still if the row has the person's name in it).
+export function matchIncome(c) {
+  if (c.type !== 'in') return null;
+  const named = matchScheduled('incomes', c);
+  if (named) return named;
+  const d = normalise(c.desc), t = fromISO(c.date);
+  const due = i => [-1, 0, 1].some(k => occurrences(i, periodOf(toISO(new Date(t.getFullYear(), t.getMonth() + k, 1)).slice(0, 7)))
+    .some(o => Math.abs(o - t) <= 4 * 864e5));
+  const cands = S.list('incomes').filter(i => i.active !== false && !i.keywords && due(i) && (() => {
+    const near = Math.abs(i.amount - c.amount) / (i.amount || 1);
+    const hasName = i.member && d.split(' ').includes(normalise(i.member));
+    return near <= (hasName ? 0.5 : 0.3);
+  })());
+  return cands.length === 1 ? cands[0] : null;
+}
 
 // Tick off the occurrence of a bill/wage nearest to a transaction's date.
 export function linkOccurrence(item, doneKey, tx) {
@@ -163,15 +188,56 @@ export function linkOccurrence(item, doneKey, tx) {
     return occurrences(item, periodOf(pk));
   });
   // Only unpaid occurrences, due no more than 5 days after the payment (bills
-  // are rarely paid early) and no more than 20 days before it.
+  // are rarely paid early) and no more than 20 days before it. One you ticked
+  // by hand (at the estimate) counts as unpaid: the real bank payment replaces it.
   const t = fromISO(tx.date);
+  const tick = d => { const x = S.byId('transactions', item[doneKey]?.[toISO(d)]); return x && x.id !== tx.id && (x.source === 'bill' || x.source === 'income') ? x : null; };
+  const open = d => !item[doneKey]?.[toISO(d)] || !S.byId('transactions', item[doneKey][toISO(d)]) || tick(d);
   const best = cands
-    .filter(d => !item[doneKey]?.[toISO(d)] && d - t <= 5 * 864e5 && t - d <= 20 * 864e5)
+    .filter(d => open(d) && d - t <= 5 * 864e5 && t - d <= 20 * 864e5)
     .sort((a, b) => Math.abs(a - t) - Math.abs(b - t))[0];
   if (!best) return;
+  const old = tick(best);
+  if (old) S.remove('transactions', old.id, { silent: true });
   const iso = toISO(best);
   item[doneKey] = { ...(item[doneKey] || {}), [iso]: tx.id };
   item.updatedAt = Date.now();
+}
+
+// The payment that ticked off a bill/wage on a given date (if it still exists).
+export const doneTx = (item, doneKey, iso) => S.byId('transactions', item[doneKey]?.[iso]);
+
+// After an import (or a wage is saved): find pays that weren't linked yet,
+// tick off their paydays and remember the name they come in under.
+export function relinkIncomes() {
+  const since = Date.now() - 120 * 864e5;
+  const linked = new Set(S.list('incomes').flatMap(i => Object.values(i.received || {})));
+  const txs = S.list('transactions').filter(t => t.type === 'in' && !S.isTransfer(t.categoryId) && FROM_BANK.has(t.source) &&
+    !linked.has(t.id) && fromISO(t.date) >= since).sort((a, b) => a.date.localeCompare(b.date));
+  let n = 0;
+  for (const t of txs) {
+    const item = (t.incomeId && S.byId('incomes', t.incomeId)) || matchIncome(t);
+    if (!item) continue;
+    learnPayName(item, t);
+    t.incomeId = item.id;
+    if (t.categoryId === 'otherin') t.categoryId = 'wages';
+    t.updatedAt = Date.now();
+    linkOccurrence(item, 'received', t);
+    n++;
+  }
+  return n;
+}
+
+// First real pay seen for a wage: keep its statement name so later pays match
+// on name alone, and expect the average of real pays from now on.
+export function learnPayName(item, t) {
+  let changed = false;
+  if (!item.keywords) {
+    const name = normalise(t.desc).split(' ').filter(w => w.length >= 3 && !/\d/.test(w)).slice(0, 4).join(' ');
+    if (name) { item.keywords = name; changed = true; }
+  }
+  if (!item.varies && Math.abs(item.amount - t.amount) >= 1) { item.varies = true; changed = true; }
+  if (changed) item.updatedAt = Date.now();
 }
 
 

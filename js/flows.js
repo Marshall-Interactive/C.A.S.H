@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { esc, money, todayISO, fromISO, parseAmount, round2, parseDate, titleCase, loadScript, sum, fmtDate, FREQS, $, $$ } from './util.js';
 import { openSheet, closeSheet, sheetHead, toast, icon } from './ui.js';
 import { guessCategory, learn, merchantName } from './categorise.js';
-import { findDuplicate, isMine, matchBill, matchIncome, linkOccurrence } from './calc.js';
+import { findDuplicate, isMine, matchBill, matchIncome, linkOccurrence, relinkIncomes, learnPayName } from './calc.js';
 import { catOptions, recordBalance } from './sheets.js';
 import { findRegular, nextDate } from './detect.js';
 
@@ -521,11 +521,12 @@ function submitReview(d, f) {
     if (p.twinId && tx.categoryId === 'transfer') { const tw = S.byId('transactions', p.twinId); if (tw && tw.categoryId !== 'transfer') { tw.categoryId = 'transfer'; tw.billId = tw.incomeId = undefined; tw.updatedAt = Date.now(); } }
     added.push(saved);
     if (p.billId) linkOccurrence(S.byId('bills', p.billId), 'paid', saved);
-    if (p.incomeId) linkOccurrence(S.byId('incomes', p.incomeId), 'received', saved);
+    if (p.incomeId) { const inc = S.byId('incomes', p.incomeId); learnPayName(inc, saved); linkOccurrence(inc, 'received', saved); }
     n++;
   }
   const { accountId, balance, part } = pendingMeta;
   const acc = accountId && S.byId('accounts', accountId);
+  relinkIncomes();
   if (acc && balance) recordBalance(acc, part === 'loan' ? { loan: Math.abs(balance.value) } : { balance: acc.kind === 'credit' ? Math.abs(balance.value) : balance.value }, balance.date, { silent: true });
   S.save();
   pending = [];
