@@ -3,7 +3,7 @@ import * as S from './store.js';
 import { esc, money, sum, periodOf, shiftPeriod, relDay, fmtDate, perMonth, FREQS, fromISO, todayISO, round2, currentPeriodKey } from './util.js';
 import { txInPeriod, spentByCategory, totals, billsInPeriod, incomesInPeriod, expectedIn, nextDue, incomeAmount } from './calc.js';
 import { donut, inOutBars } from './charts.js';
-import { icon, view } from './ui.js';
+import { icon, view, sheetHead } from './ui.js';
 import * as Sync from './sync.js';
 
 export const TITLES = { home: 'Home', activity: 'Activity', plan: 'Plan', savings: 'Savings', settings: 'Settings' };
@@ -221,7 +221,7 @@ function moneyPie(spent, t, base, txs) {
   return `<section class="card span2 pie-card">
     <h2>Where the money goes</h2>
     <div class="pie-layout">
-      <div class="chart pie-chart">${donut(segs, { size: 200, thick: 30, center, sub })}</div>
+      <div class="chart pie-chart" ${mode === 'income' ? 'data-action="moneyIn" role="button" tabindex="0" aria-label="See money in"' : ''}>${donut(segs, { size: 200, thick: 30, center, sub })}</div>
       <div class="pie-side">
         <div class="seg small pie-modes" role="radiogroup" aria-label="Show">${PIE_MODES.map(([v, l]) => `<label><input type="radio" name="pieMode" value="${v}" ${mode === v ? 'checked' : ''} data-change="pieMode"><span>${l}</span></label>`).join('')}</div>
         ${heading}
@@ -240,7 +240,10 @@ function incomeTally(txs, t, base, spending, saved) {
   const other = t.in - wages;
   const toCome = base - t.in;
   const left = base - spending - saved;
-  const row = (label, value, cls = '', note = '') => `<div class="tally-row ${cls}"><span>${label}${note ? `<small>${note}</small>` : ''}</span><b>${value}</b></div>`;
+  const row = (label, value, cls = '', note = '') => {
+    const inner = `<span>${label}${note ? `<small>${note}</small>` : ''}</span><b>${value}</b>`;
+    return cls.startsWith('in') ? `<button class="tally-row ${cls}" data-action="moneyIn">${inner}<i class="chev">›</i></button>` : `<div class="tally-row ${cls}">${inner}</div>`;
+  };
   return `<div class="tally">
     ${row('💵 Wages in', money(wages), 'in')}
     ${other > 0.004 ? row('➕ Other money in', money(other), 'in') : ''}
@@ -249,6 +252,38 @@ function incomeTally(txs, t, base, spending, saved) {
     ${saved > 0.004 ? row('🐷 Put into savings', '−' + money(saved), 'out') : ''}
     ${row(left >= 0 ? '✅ Left over' : '⚠ Over by', money(Math.abs(left)), 'total ' + (left >= 0 ? 'pos' : 'neg'))}
   </div>`;
+}
+
+// ---------- Money in (from Home) ----------
+const SRC = { csv: '🏦 Bank file', pdf: '🏦 Bank statement', income: '✋ Ticked off', manual: '✋ Added by hand', receipt: '🧾 Receipt', screenshot: '📱 Screenshot', pot: '🐷 From a pot' };
+export function moneyInSheet() {
+  const p = periodOf(view.period);
+  const ins = txInPeriod(p).filter(t => t.type === 'in' && !S.isTransfer(t.categoryId)).sort((a, b) => b.date.localeCompare(a.date));
+  const wages = ins.filter(t => t.categoryId === 'wages');
+  const other = ins.filter(t => t.categoryId !== 'wages');
+  const due = p.end > new Date() ? incomesInPeriod(p).filter(r => !r.done && fromISO(r.date) >= new Date(new Date().toDateString())) : [];
+  const row = t => {
+    const acc = t.accountId ? S.byId('accounts', t.accountId) : null;
+    const src = SRC[t.source] || SRC.manual;
+    return `<button class="tx" data-action="editTx" data-id="${t.id}">
+      <span class="tx-ic" style="--c:${S.memberColor(t.member)}">${S.cat(t.categoryId).icon}</span>
+      <span class="tx-main"><b>${esc(t.bankDesc || t.desc)}</b><small>${fmtDate(t.date, { weekday: 'short', day: 'numeric', month: 'short' })} · ${src}${acc ? ` · ${esc(acc.name)}` : ''}${t.member ? ` · ${esc(t.member)}` : ''}</small></span>
+      <span class="tx-amt in">+${money(t.amount)}</span></button>`;
+  };
+  const block = (title, list, ic) => list.length ? `<div class="section-title"><span>${ic} ${title}</span><span>${money(sum(list, t => t.amount))}</span></div>
+    <div class="card list">${list.map(row).join('')}</div>` : '';
+  const total = sum(ins, t => t.amount);
+  return `${sheetHead('Money in', esc(p.range))}
+    <div class="in-summary">
+      <div><small>Wages</small><b>${money(sum(wages, t => t.amount))}</b><small>${wages.length} pay${wages.length === 1 ? '' : 's'}</small></div>
+      <div><small>All money in</small><b>${money(total)}</b><small>${ins.length} payment${ins.length === 1 ? '' : 's'}</small></div>
+    </div>
+    ${block('Wages', wages, '💵') || '<p class="small muted">No wages yet this month. Import a bank statement (WAGES rows are picked up automatically) or add one with ＋.</p>'}
+    ${block('Other money in', other, '➕')}
+    ${due.length ? `<div class="section-title"><span>⏳ Still to come</span><span>${money(sum(due, r => incomeAmount(r.item)))}</span></div>
+    <div class="card list">${due.map(r => `<div class="tx static"><span class="tx-ic">💵</span><span class="tx-main"><b>${esc(r.item.name)}</b><small>Expected ${fmtDate(r.date, { weekday: 'short', day: 'numeric', month: 'short' })}${r.item.varies ? ' · about' : ''}</small></span><span class="tx-amt muted">${money(incomeAmount(r.item))}</span></div>`).join('')}</div>` : ''}
+    <p class="small muted">Tap a payment to change it. Bank transfers between your own accounts aren't counted.</p>
+    <div class="form-actions"><button class="btn" data-action="moneyInActivity">See all in Activity</button></div>`;
 }
 
 // ---------- Home ----------
@@ -272,7 +307,7 @@ export function home() {
     <div class="sub">${useExpected ? `Counting ${money(expIn - t.in, { whole: true })} of wages still to come` : base ? `You've spent ${Math.round(pct)}% of what came in` : 'Add your wages to see what is left'}</div>
     <div class="meter" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
     <div class="hero-stats">
-      <div class="hero-stat"><small>↓ Money in</small><b>${money(t.in)}</b><small>${expIn ? 'of ' + money(expIn) + ' expected' : 'this month'}</small></div>
+      <button class="hero-stat" data-action="moneyIn"><small>↓ Money in ›</small><b>${money(t.in)}</b><small>${expIn ? 'of ' + money(expIn) + ' expected' : 'this month'}</small></button>
       <div class="hero-stat"><small>↑ Money out</small><b>${money(t.out)}</b><small>${t.count} payments</small></div>
     </div>
   </section>`;
