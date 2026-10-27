@@ -215,7 +215,7 @@ function moneyPie(spent, t, base, txs) {
     // the 7 biggest get their own colour; the rest fold into "Everything else"
     segs = rows.slice(0, 7).map(([id, v], i) => ({ label: `${S.cat(id).icon} ${S.cat(id).name}`, value: v, color: `var(--s${i + 1})`, open: opens('cat', id) }));
     const rest = sum(rows.slice(7), ([, v]) => v);
-    if (rest > 0.004) segs.push({ label: `Everything else (${rows.length - 7})`, value: rest, color: 'var(--line-2)', open: opens('cats', rows.slice(7).map(([id]) => id).join(',')) });
+    if (rest > 0.004) segs.push({ label: `Everything else (${rows.length - 7})`, value: rest, color: 'var(--line-2)', open: 'data-action="pieRest"', rest: rows.slice(7) });
     center = money(sum(rows, ([, v]) => v), { whole: true }); sub = g ? g.name : 'out';
     if (g) heading = `<button class="link" data-action="pieBack">← All spending areas</button>`;
   }
@@ -230,6 +230,14 @@ function moneyPie(spent, t, base, txs) {
     const pct = total ? Math.round((s.value / total) * 100) : 0;
     const count = fresh ? ` data-count="${Math.round(s.value)}" data-count-key="pie-${i}" data-count-dp="0" data-count-from="0" data-count-ms="900"` : '';
     const inner = `<i style="background:${s.color}"></i><span>${esc(s.label)}</span><b${count}>${money(s.value, { whole: true })}</b><small>${pct}%</small>`;
+    if (s.rest) {
+      // "Everything else" opens up in place to show the smaller categories
+      const open = view.pieRestOpen;
+      const kids = open ? `<div class="pie-rest">${s.rest.map(([id, v]) => `<button class="legend-row pie-row sub" ${opens('cat', id)}>
+          <span>${S.cat(id).icon} ${esc(S.cat(id).name)}</span><b>${money(v, { whole: true })}</b><small>${total ? Math.round((v / total) * 100) : 0}%</small><i class="chev">›</i></button>`).join('')}
+        <button class="link small" ${opens('cats', s.rest.map(([id]) => id).join(','))}>See all their payments ›</button></div>` : '';
+      return `<button class="legend-row pie-row" ${s.open} aria-expanded="${open ? 'true' : 'false'}">${inner}<i class="chev rest-chev ${open ? 'open' : ''}">›</i></button>${kids}`;
+    }
     return s.open ? `<button class="legend-row pie-row" ${s.open}>${inner}<i class="chev">›</i></button>` : `<div class="legend-row pie-row">${inner}</div>`;
   }).join('');
   return `<section class="card span2 pie-card">

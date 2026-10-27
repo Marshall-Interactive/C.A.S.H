@@ -659,6 +659,12 @@ label.imp-row { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .sweep-mask { animation: none; stroke-dashoffset: 0; } .legend.stagger .pie-row { animation: none; opacity: 1; transform: none; } }
 .pie-chart path.slice:hover { opacity: .82; }
 .section-title .cat-link { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+.rest-chev { display: inline-block; transition: transform .2s; }
+.rest-chev.open { transform: rotate(90deg); }
+.pie-rest { margin: 0 0 6px 18px; padding-left: 8px; border-left: 2px solid var(--line); display: grid; animation: row-in .25s ease-out; }
+.pie-row.sub { font-size: 13px; }
+.pie-row.sub span { flex: 1; color: var(--ink-2); }
+.pie-rest .link { justify-self: start; margin: 4px 6px; padding: 0; }
 .pie-row .chev { font-style: normal; color: var(--muted); }
 .tx-amt.muted { color: var(--muted); }
 .tally-row.total { margin-top: 6px; border-top: 2px solid var(--line-2); padding-top: 12px; font-size: 18px; }

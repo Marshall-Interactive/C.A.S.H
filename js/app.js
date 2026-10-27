@@ -45,6 +45,7 @@ const actions = {
     // closing the sheet steps history back first; move on once that has landed
     setTimeout(() => { location.hash = '#activity'; }, 60);
   },
+  pieRest: () => { view.pieRestOpen = !view.pieRestOpen; render(); },
   pieBack: () => { view.pieMode = 'areas'; view.pieGroup = null; render(); },
   exportBackup: () => {
     download(`cash-backup-${todayISO()}.json`, JSON.stringify(S.getState(), null, 1));
