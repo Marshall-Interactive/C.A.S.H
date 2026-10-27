@@ -27,7 +27,7 @@ export function donut(segs, { size = 180, thick = 24, center = '', sub = '' } = 
         ? sector(c, c, r0, r1, 0, Math.PI) + sector(c, c, r0, r1, Math.PI, TAU - 1e-4)
         : sector(c, c, r0, r1, a, a1);
       a = a1;
-      return `<path d="${d}" fill="${s.color}" stroke="var(--surface)" stroke-width="2" data-tip="${esc(s.label)} · ${pct}%|${esc(money(s.value))}"/>`;
+      return `<path d="${d}" fill="${s.color}" stroke="var(--surface)" stroke-width="2" data-tip="${esc(s.label)} · ${pct}%|${esc(money(s.value))}"${s.open ? ` ${s.open} class="slice"` : ''}/>`;
     }).join('');
   }
   return `<svg viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(sub)} ${esc(center)}">${body}

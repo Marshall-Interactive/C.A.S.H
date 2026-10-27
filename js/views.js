@@ -1,7 +1,7 @@
 // The main screens. Each returns an HTML string for <main>.
 import * as S from './store.js';
 import { esc, money, sum, periodOf, shiftPeriod, relDay, fmtDate, perMonth, FREQS, fromISO, todayISO, round2, currentPeriodKey } from './util.js';
-import { txInPeriod, spentByCategory, totals, billsInPeriod, incomesInPeriod, expectedIn, nextDue, incomeAmount } from './calc.js';
+import { txInPeriod, spendLines, spentByCategory, totals, billsInPeriod, incomesInPeriod, expectedIn, nextDue, incomeAmount } from './calc.js';
 import { donut, inOutBars } from './charts.js';
 import { icon, view, sheetHead } from './ui.js';
 import * as Sync from './sync.js';
@@ -190,25 +190,25 @@ function moneyPie(spent, t, base, txs) {
   if (mode === 'income') {
     const left = Math.max(0, base - spending - saved);
     segs = [
-      { label: 'Spent', value: spending, color: 'var(--s2)' },
-      { label: 'Saved', value: saved, color: 'var(--s3)' },
-      { label: 'Left over', value: left, color: 'var(--line-2)' },
+      { label: 'Spent', value: spending, color: 'var(--s2)', open: opens('spend') },
+      { label: 'Saved', value: saved, color: 'var(--s3)', open: opens('saved') },
+      { label: 'Left over', value: left, color: 'var(--line-2)', open: 'data-action="moneyIn"' },
     ].filter(s => s.value > 0.004);
     center = money(base, { whole: true }); sub = 'coming in';
     if (base && spending + saved > base) note = `<p class="status bad small">⚠ Spending is ${money(spending + saved - base)} more than came in</p>`;
     if (!base) note = '<p class="small muted">Add your wages in Plan → Wages to see your income split.</p>';
     tally = incomeTally(txs, t, base, spending, saved);
   } else if (mode === 'areas') {
-    segs = areas.filter(a => a.value > 0.004).map(a => ({ id: a.id, label: a.name + (a.savings ? ' (saved)' : ''), value: a.value, color: a.color }));
+    segs = areas.filter(a => a.value > 0.004).map(a => ({ id: a.id, label: a.name + (a.savings ? ' (saved)' : ''), value: a.value, color: a.color, open: opens('area', a.id) }));
     center = money(t.out, { whole: true }); sub = 'out';
-    note = '<p class="small muted">Tap an area to see what\'s inside it.</p>';
+    note = '<p class="small muted">Tap an area to see every payment in it.</p>';
   } else {
     const g = view.pieGroup && S.groups().find(x => x.id === view.pieGroup);
     const rows = Object.entries(spent).filter(([id, v]) => v > 0.004 && (!g || S.cat(id).group === g.id)).sort((a, b) => b[1] - a[1]);
     // the 7 biggest get their own colour; the rest fold into "Everything else"
-    segs = rows.slice(0, 7).map(([id, v], i) => ({ label: `${S.cat(id).icon} ${S.cat(id).name}`, value: v, color: `var(--s${i + 1})` }));
+    segs = rows.slice(0, 7).map(([id, v], i) => ({ label: `${S.cat(id).icon} ${S.cat(id).name}`, value: v, color: `var(--s${i + 1})`, open: opens('cat', id) }));
     const rest = sum(rows.slice(7), ([, v]) => v);
-    if (rest > 0.004) segs.push({ label: `Everything else (${rows.length - 7})`, value: rest, color: 'var(--line-2)' });
+    if (rest > 0.004) segs.push({ label: `Everything else (${rows.length - 7})`, value: rest, color: 'var(--line-2)', open: opens('cats', rows.slice(7).map(([id]) => id).join(',')) });
     center = money(sum(rows, ([, v]) => v), { whole: true }); sub = g ? g.name : 'out';
     if (g) heading = `<button class="link" data-action="pieBack">← All spending areas</button>`;
   }
@@ -216,7 +216,7 @@ function moneyPie(spent, t, base, txs) {
   const legend = segs.map(s => {
     const pct = total ? Math.round((s.value / total) * 100) : 0;
     const inner = `<i style="background:${s.color}"></i><span>${esc(s.label)}</span><b>${money(s.value, { whole: true })}</b><small>${pct}%</small>`;
-    return s.id ? `<button class="legend-row pie-row" data-action="pieDrill" data-id="${s.id}">${inner}</button>` : `<div class="legend-row pie-row">${inner}</div>`;
+    return s.open ? `<button class="legend-row pie-row" ${s.open}>${inner}<i class="chev">›</i></button>` : `<div class="legend-row pie-row">${inner}</div>`;
   }).join('');
   return `<section class="card span2 pie-card">
     <h2>Where the money goes</h2>
@@ -232,6 +232,9 @@ function moneyPie(spent, t, base, txs) {
     ${tally}
   </section>`;
 }
+
+// What a pie slice opens: the payments behind it.
+const opens = (kind, id = '') => `data-action="spendList" data-kind="${kind}" data-id="${esc(id)}"`;
 
 // Under the Income pie: wages in − spending − saved = left over.
 function incomeTally(txs, t, base, spending, saved) {
@@ -284,6 +287,58 @@ export function moneyInSheet() {
     <div class="card list">${due.map(r => `<div class="tx static"><span class="tx-ic">💵</span><span class="tx-main"><b>${esc(r.item.name)}</b><small>Expected ${fmtDate(r.date, { weekday: 'short', day: 'numeric', month: 'short' })}${r.item.varies ? ' · about' : ''}</small></span><span class="tx-amt muted">${money(incomeAmount(r.item))}</span></div>`).join('')}</div>` : ''}
     <p class="small muted">Tap a payment to change it. Bank transfers between your own accounts aren't counted.</p>
     <div class="form-actions"><button class="btn" data-action="moneyInActivity">See all in Activity</button></div>`;
+}
+
+// ---------- Spending behind a pie slice ----------
+export function spendSheet(kind, id) {
+  const p = periodOf(view.period);
+  const areaOf = c => (S.byId('categories', c) ? S.cat(c).group : 'other');
+  const savingsAreas = new Set(S.groups().filter(g => g.savings).map(g => g.id));
+  const ids = new Set(String(id).split(','));
+  const keep = {
+    spend: l => !savingsAreas.has(areaOf(l.categoryId)),
+    saved: l => savingsAreas.has(areaOf(l.categoryId)),
+    area: l => (S.groups().some(g => g.id === areaOf(l.categoryId)) ? areaOf(l.categoryId) : 'ungrouped') === id,
+    cat: l => l.categoryId === id,
+    cats: l => ids.has(l.categoryId),
+  }[kind] || (() => true);
+  const lines = spendLines(txInPeriod(p)).filter(keep).sort((a, b) => b.tx.date.localeCompare(a.tx.date));
+  const total = sum(lines, l => l.amount);
+  const g = kind === 'area' && S.groups().find(x => x.id === id);
+  const c = kind === 'cat' && S.cat(id);
+  const title = { spend: 'Spending', saved: 'Saved', area: g ? g.name : 'Ungrouped', cat: c ? `${c.icon} ${c.name}` : '', cats: 'Everything else' }[kind] || 'Spending';
+  const row = l => {
+    const t = l.tx, acc = t.accountId ? S.byId('accounts', t.accountId) : null;
+    const part = t.splits?.length > 1 ? ` · part of ${money(t.amount)}` : '';
+    return `<button class="tx" data-action="editTx" data-id="${t.id}">
+      <span class="tx-ic" style="--c:${S.memberColor(t.member)}">${S.cat(l.categoryId).icon}</span>
+      <span class="tx-main"><b>${esc(t.desc)}</b><small>${fmtDate(t.date, { weekday: 'short', day: 'numeric', month: 'short' })} · ${SRC[t.source] || SRC.manual}${acc ? ` · ${esc(acc.name)}` : ''}${t.member ? ` · ${esc(t.member)}` : ''}${part}</small></span>
+      <span class="tx-amt out">−${money(l.amount)}</span></button>`;
+  };
+  // one category: a single list. Several: a list per category, biggest first.
+  let body;
+  if (kind === 'cat') body = lines.length ? `<div class="card list">${lines.map(row).join('')}</div>` : '';
+  else {
+    const byCat = {};
+    for (const l of lines) (byCat[l.categoryId] ||= []).push(l);
+    body = Object.entries(byCat).sort((a, b) => sum(b[1], l => l.amount) - sum(a[1], l => l.amount)).map(([cid, ls]) =>
+      `<div class="section-title"><span>${S.cat(cid).icon} ${esc(S.cat(cid).name)}</span><span>${money(sum(ls, l => l.amount))}</span></div>
+      <div class="card list">${ls.map(row).join('')}</div>`).join('');
+  }
+  const budget = c ? +c.budget || 0 : g ? sum(S.list('categories').filter(x => x.group === g.id), x => +x.budget || 0) : 0;
+  const biggest = lines.reduce((m, l) => (l.amount > (m?.amount || 0) ? l : m), null);
+  return `${sheetHead(esc(title), esc(p.range))}
+    <div class="in-summary out">
+      <div><small>Spent</small><b>${money(total)}</b><small>${lines.length} payment${lines.length === 1 ? '' : 's'}</small></div>
+      ${budget ? `<div><small>Budget</small><b class="${total > budget ? 'neg' : ''}">${money(budget)}</b><small>${total > budget ? money(total - budget) + ' over' : money(budget - total) + ' left'}</small></div>`
+        : biggest ? `<div><small>Biggest</small><b>${money(biggest.amount)}</b><small>${esc(biggest.tx.desc)}</small></div>` : ''}
+    </div>
+    ${body || '<p class="small muted">No spending here this month yet. Import a bank statement or add a payment with ＋.</p>'}
+    <p class="small muted">Tap a payment to change it or move it to another category.</p>
+    <div class="form-actions">
+      ${kind === 'area' && g ? `<button class="btn" data-action="pieDrillFromSheet" data-id="${g.id}">Show as a pie by category</button>` : ''}
+      ${kind === 'cat' ? `<button class="btn" data-action="catActivity" data-id="${esc(id)}">See in Activity</button>` : ''}
+    </div>`;
 }
 
 // ---------- Home ----------
