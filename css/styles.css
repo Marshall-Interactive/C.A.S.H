@@ -519,3 +519,10 @@ button.pie-row:hover { background: var(--surface-2); }
 .acc-head .pot-head { flex: 1; min-width: 0; }
 .acc-line.avail { border-top: 0; padding-top: 0; font-size: 15px; }
 .acc-line.avail b { font-size: 17px; }
+
+.dup-ic { color: var(--warn-ink); font-weight: 800; text-align: center; }
+.dup-choice { grid-column: 1 / -1; display: grid; gap: 6px; padding-top: 4px; }
+.dup-choice p { margin: 0; }
+.dup-choice .seg span { white-space: normal; font-size: 12.5px; }
+.imp-row.dup .seg input[value=reject]:checked + span { color: var(--bad-ink); }
+.imp-row.dup .seg input[value=accept]:checked + span { color: var(--good-ink); }

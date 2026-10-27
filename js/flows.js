@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { esc, money, todayISO, fromISO, parseAmount, round2, parseDate, titleCase, loadScript, sum, fmtDate, FREQS, $, $$ } from './util.js';
 import { openSheet, closeSheet, sheetHead, toast, icon } from './ui.js';
 import { guessCategory, learn, merchantName } from './categorise.js';
-import { findDuplicate, matchBill, matchIncome, linkOccurrence } from './calc.js';
+import { findDuplicate, isMine, matchBill, matchIncome, linkOccurrence } from './calc.js';
 import { catOptions, recordBalance } from './sheets.js';
 import { findRegular, nextDate } from './detect.js';
 
@@ -434,8 +434,10 @@ function review(rows, source, { editable = false, accountId = '', balance = null
   // Transfers between your own accounts: the same amount going out of one and into another.
   const others = S.list('transactions').filter(t => t.accountId && t.accountId !== accId);
   const last4s = S.list('accounts').flatMap(a => [a.last4, a.loanLast4]).filter(Boolean);
+  const used = new Set();
   pending = rows.map(r => {
-    const dup = findDuplicate(r, pool);
+    const dup = findDuplicate(r, pool, used);
+    if (dup) used.add(dup.id);
     const bill = matchBill(r), inc = matchIncome(r);
     let guess = guessCategory(r.desc, r.type);
     // Money going INTO a credit card is almost always you paying it off.
@@ -446,34 +448,61 @@ function review(rows, source, { editable = false, accountId = '', balance = null
     const twin = others.find(t => t.type !== r.type && Math.abs(t.amount - r.amount) < 0.005 && Math.abs(fromISO(t.date) - fromISO(r.date)) <= 2 * 864e5);
     if (twin) guess = 'transfer';
     const categoryId = bill?.categoryId || (inc && guess === 'otherin' ? 'wages' : guess);
-    return { ...r, dup: !!dup, billId: twin ? undefined : bill?.id, incomeId: twin ? undefined : inc?.id, categoryId: twin || part === 'loan' ? 'transfer' : categoryId, guessed: twin || part === 'loan' ? 'transfer' : categoryId, twinId: twin?.id };
+    return { ...r, dup: !!dup, dupOf: dup?.id, billId: twin ? undefined : bill?.id, incomeId: twin ? undefined : inc?.id, categoryId: twin || part === 'loan' ? 'transfer' : categoryId, guessed: twin || part === 'loan' ? 'transfer' : categoryId, twinId: twin?.id };
   }).sort((a, b) => b.date.localeCompare(a.date));
   const dups = pending.filter(p => p.dup).length;
   const real = pending.filter(p => p.categoryId !== 'transfer');
   const ins = real.filter(p => p.type === 'in'), outs = real.filter(p => p.type === 'out');
-  openSheet(`${sheetHead('Review & import', `${pending.length} payments found${dups ? ` · ${dups} look like duplicates (unticked)` : ''}`)}
+  openSheet(`${sheetHead('Review & import', `${pending.length} payments found${dups ? ` · ${dups} already in C.A.S.H` : ''}`)}
   <form class="form" data-form="review">
     <input type="hidden" name="source" value="${source}">
     <div class="stat-row"><div class="stat"><small>Money in</small><b class="pos">${money(sum(ins, r => r.amount))}</b></div><div class="stat"><small>Money out</small><b>${money(sum(outs, r => r.amount))}</b></div></div>
     ${acc && balance ? `<p class="notice">🏦 ${esc(acc.name)} will be updated to <b>${money(acc.kind === 'credit' ? Math.abs(balance.value) : balance.value)}</b>${acc.kind === 'credit' ? ' owed' : ''} (balance on ${fmtDate(balance.date)}).</p>` : ''}
     <p class="small muted">🔁 Transfers between your own accounts (like paying off the card) are imported but not counted as spending.</p>
+    ${dups ? `<p class="notice small">⚠ <b>${dups}</b> ${dups === 1 ? 'payment matches' : 'payments match'} something already in C.A.S.H (same amount within 3 days). Your own entry is kept — choose <b>Reject</b> to skip the bank copy, or <b>Accept</b> if it really is a separate payment.</p>` : ''}
     <div class="btn-row"><button type="button" class="btn sm" data-action="reviewAll" data-on="1">Tick all</button><button type="button" class="btn sm" data-action="reviewAll" data-on="0">Untick all</button>
       <label class="field inline"><span>Who</span><select name="member">${[...S.settings().members, 'Joint'].map(m => `<option ${m === S.settings().currentMember ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label></div>
     <div class="imp-list">${pending.map((p, i) => `<div class="imp-row ${p.dup ? 'dup' : ''}">
-      <input type="checkbox" name="sel" value="${i}" ${p.dup ? '' : 'checked'} aria-label="Import this payment">
+      ${p.dup ? '<span class="dup-ic" title="Already in C.A.S.H">⚠</span>' : `<input type="checkbox" name="sel" value="${i}" checked aria-label="Import this payment">`}
       ${editable ? `<div class="imp-edit"><input name="desc_${i}" value="${esc(p.desc)}" aria-label="Description"><input type="date" name="date_${i}" value="${p.date}" aria-label="Date"></div>
         <div class="imp-amt"><select name="type_${i}" aria-label="In or out"><option value="out" ${p.type === 'out' ? 'selected' : ''}>Out</option><option value="in" ${p.type === 'in' ? 'selected' : ''}>In</option></select><input name="amt_${i}" value="${p.amount.toFixed(2)}" inputmode="decimal" aria-label="Amount"></div>`
-        : `<div><b>${esc(p.desc)}</b><div class="meta">${fmtDate(p.date, { day: 'numeric', month: 'short', year: '2-digit' })}${p.dup ? ' · <b>possible duplicate</b>' : ''}${p.billId ? ' · 📄 bill' : ''}${p.incomeId ? ' · 💵 wage' : ''}</div></div>
+        : `<div><b>${esc(p.desc)}</b><div class="meta">${fmtDate(p.date, { day: 'numeric', month: 'short', year: '2-digit' })}${p.billId ? ' · 📄 bill' : ''}${p.incomeId ? ' · 💵 wage' : ''}</div></div>
         <b class="tx-amt ${p.type}">${p.type === 'in' ? '+' : '−'}${money(p.amount)}</b>`}
       <select name="cat_${i}" aria-label="Category">${catOptions(p.type, p.categoryId)}</select>
+      ${p.dup ? dupChoice(p, i) : ''}
     </div>`).join('')}</div>
-    <div class="form-actions"><button class="btn primary" type="submit">Import ticked</button></div>
+    <div class="form-actions"><button class="btn primary" type="submit">Import</button></div>
   </form>`, { wide: true });
+}
+
+// "Matches your entry …" with Reject (keep mine) / Accept (it's separate).
+function dupChoice(p, i) {
+  const mine = S.byId('transactions', p.dupOf);
+  const yours = mine && isMine(mine);
+  return `<div class="dup-choice">
+    <p class="small">${yours ? 'Matches what you added' : 'Already imported'}: <b>${esc(mine?.desc || '')}</b> · ${mine ? fmtDate(mine.date) : ''}${mine?.member ? ' · ' + esc(mine.member) : ''}</p>
+    <div class="seg small" role="radiogroup" aria-label="Keep or import">
+      <label><input type="radio" name="dup_${i}" value="reject" checked><span>✕ Reject — keep ${yours ? 'mine' : 'the existing one'}</span></label>
+      <label><input type="radio" name="dup_${i}" value="accept"><span>✓ Accept as a new payment</span></label>
+    </div>
+  </div>`;
 }
 
 function submitReview(d, f) {
   const sel = $$('[name=sel]:checked', f).map(x => +x.value);
-  if (!sel.length) return toast('Nothing ticked');
+  // duplicates: Accept imports the bank row; Reject keeps your entry and links the bank details to it
+  let linked = 0;
+  pending.forEach((p, i) => {
+    if (!p.dup) return;
+    if (f['dup_' + i]?.value === 'accept') { sel.push(i); return; }
+    const mine = S.byId('transactions', p.dupOf);
+    if (mine && isMine(mine) && !mine.bankMatched) {
+      Object.assign(mine, { bankMatched: true, bankDesc: p.desc, bankDate: p.date, updatedAt: Date.now() });
+      if (pendingMeta.accountId && !mine.accountId) mine.accountId = pendingMeta.accountId;
+      linked++;
+    }
+  });
+  if (!sel.length && !linked && !pendingMeta.balance) return toast('Nothing ticked');
   let n = 0;
   const added = [];
   for (const i of sel) {
@@ -502,7 +531,7 @@ function submitReview(d, f) {
   pending = [];
   pendingMeta = {};
   closeSheet();
-  toast(`Imported ${n} payment${n === 1 ? '' : 's'}`);
+  toast(n || linked ? `Imported ${n} payment${n === 1 ? '' : 's'}${linked ? ` · ${linked} matched to your own entries` : ''}` : 'Nothing new — everything was already in C.A.S.H');
   const regular = findRegular(added);
   if (regular.length) setTimeout(() => suggestRegular(regular), 400);
 }
