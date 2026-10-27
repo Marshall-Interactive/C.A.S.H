@@ -44,8 +44,44 @@ export const MERCHANTS = ['Woolworths', 'Coles', 'Aldi', 'IGA', 'Costco', 'Harri
 
 const ruleKey = d => normalise(d).split(' ').filter(w => w.length > 1 && !/\d/.test(w)).slice(0, 3).join(' ');
 
+// Your own rules ("anything with BWS in it is Alcohol") live in the same rules
+// map as '~bws'. A deleted rule is kept as null so the deletion syncs.
+export const wordRules = () => Object.entries(S.getState().rules || {})
+  .filter(([k, v]) => k.startsWith('~') && v && S.byId('categories', v))
+  .map(([k, v]) => ({ key: k, text: k.slice(1), categoryId: v }))
+  .sort((a, b) => b.text.length - a.text.length);
+export const learnedRules = () => Object.entries(S.getState().rules || {})
+  .filter(([k, v]) => !k.startsWith('~') && v && S.byId('categories', v)).map(([k, v]) => ({ key: k, text: k, categoryId: v }));
+// Does the payment's name contain this text? Whole words for short text
+// ("BP" must not catch "BPAY"); 5+ letters may be the start of a word ("woolw").
+export function hasText(text, desc) {
+  const t = normalise(text);
+  if (!t) return false;
+  const d = ' ' + normalise(desc) + ' ';
+  return d.includes(' ' + t + ' ') || (t.length >= 5 && d.includes(' ' + t));
+}
+export function addWordRule(text, categoryId) {
+  const t = normalise(text);
+  if (!t || !categoryId) return;
+  S.getState().rules['~' + t] = categoryId;
+  S.getState().rulesUpdatedAt = Date.now();
+}
+export function removeRule(key) {
+  S.getState().rules[key] = null;
+  S.getState().rulesUpdatedAt = Date.now();
+}
+// The bit of a payment's name that similar payments share: a known shop, or its first words.
+const NOISE = new Set(['visa', 'debit', 'credit', 'purchase', 'eftpos', 'card', 'pos', 'aus', 'nsw', 'vic', 'qld', 'tas', 'act', 'the', 'pty', 'ltd', 'value', 'date', 'tap', 'sq', 'sumup', 'zeller']);
+export function similarText(desc) {
+  const m = merchantName(desc);
+  if (m) return m;
+  return normalise(desc).split(' ').filter(w => w.length >= 3 && !/\d/.test(w) && !NOISE.has(w)).slice(0, 2).join(' ');
+}
+
 export function guessCategory(desc, type = 'out') {
   const st = S.getState();
+  const mine = wordRules().find(r => hasText(r.text, desc) && (S.cat(r.categoryId).type || 'out') === type);
+  if (mine) return mine.categoryId;
   const key = ruleKey(desc);
   const learned = key && st.rules[key];
   if (learned && S.byId('categories', learned)) return learned;

@@ -477,6 +477,7 @@ export function txList() {
   if (!txs.length) return `<div class="card">${empty('🔍', 'No payments match for this month.', `<br><button class="btn sm" data-action="openAdd">Add one</button>`)}</div>`;
   const t = totals(txs);
   let html = `<div class="stat-row"><div class="stat"><small>${txs.length} payments · in</small><b class="pos">${money(t.in)}</b></div><div class="stat"><small>Out</small><b>${money(t.out)}</b></div></div>`;
+  if (q) html += `<div class="btn-row"><button class="btn sm" data-action="moveSearch">🏷️ Move all “${esc(f.q.trim())}” payments to a category…</button></div>`;
   const days = {};
   txs.forEach(x => (days[x.date] ||= []).push(x));
   for (const [d, list] of Object.entries(days)) {
@@ -784,6 +785,8 @@ export function settingsView() {
   </section>
   <section class="card">
     ${syncCard()}
+    <h2 class="mt">Sorting</h2>
+    <div class="btn-col"><button class="btn" data-action="rules">🏷️ Category rules <small class="muted">— e.g. “BWS” → Alcohol</small></button></div>
     <h2 class="mt">Your data</h2>
     <div class="btn-col">
       <button class="btn" data-action="exportBackup">${icon('download', 18)} Back up (download file)</button>

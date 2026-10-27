@@ -525,6 +525,10 @@ button.tally-row:hover { background: var(--surface-2); }
 .in-summary small { display: block; color: var(--muted); font-size: 12px; }
 .in-summary b { font-size: 20px; color: var(--good-ink); font-variant-numeric: tabular-nums; }
 .tx.static { cursor: default; }
+.rule-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.rule-row:last-child { border-bottom: 0; }
+.pad { padding: 12px; }
+label.imp-row { cursor: pointer; }
 .tx-amt.est { color: var(--muted); font-weight: 600; }
 .in-summary.out b { color: var(--ink); }
 .in-summary.out b.neg { color: var(--bad-ink); }
