@@ -1,8 +1,8 @@
 // Add/edit forms shown in bottom sheets, plus what happens when they're saved.
 import * as S from './store.js';
-import { esc, money, todayISO, parseAmount, round2, currencySymbol, FREQS, sum, perMonth, periodOf, $, $$ } from './util.js';
+import { esc, money, todayISO, parseAmount, round2, currencySymbol, FREQS, sum, perMonth, periodOf, fmtDate, $, $$ } from './util.js';
 import { openSheet, closeSheet, sheetHead, toast, icon, view, confetti, buzz } from './ui.js';
-import { guessCategory, learn } from './categorise.js';
+import { guessCategory, learn, hasText, similarText, addWordRule, removeRule, wordRules, learnedRules } from './categorise.js';
 import { expectedIn, incomeAmount, relinkIncomes } from './calc.js';
 import { potSaved, potPct, MILESTONES } from './views.js';
 
@@ -103,7 +103,94 @@ function saveTx(d) {
   S.upsert('transactions', tx);
   closeSheet();
   toast(old ? 'Saved' : `Added ${money(amount)} · ${S.cat(tx.categoryId).name}`);
+  // Moved a payment to another category? Offer to move the ones like it too.
+  if (old && d.categoryId && d.categoryId !== old.categoryId) {
+    const text = similarText(tx.desc);
+    if (text && similarPayments(text, tx.categoryId, tx.id).length) setTimeout(() => similarSheet({ text, categoryId: tx.categoryId, exceptId: tx.id }), 300);
+  }
 }
+
+// ---------- Move similar payments together (and remember it) ----------
+function similarPayments(text, categoryId, exceptId) {
+  const type = S.cat(categoryId).type || 'out';
+  return S.list('transactions').filter(t => t.id !== exceptId && !(t.splits?.length > 1) && t.categoryId !== categoryId &&
+    (type === 'transfer' || t.type === type) && hasText(text, t.desc))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+const allCatOptions = (selected, type) => S.list('categories').filter(c => !type || (c.type || 'out') === type || c.type === 'transfer')
+  .map(c => `<option value="${c.id}" ${c.id === selected ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('');
+
+function similarList(text, categoryId, exceptId) {
+  if (!text.trim()) return '<p class="small muted">Type part of the name, e.g. BWS.</p>';
+  if (!categoryId) return '<p class="small muted">Pick a category.</p>';
+  const list = similarPayments(text, categoryId, exceptId);
+  if (!list.length) return `<p class="small muted">No other payments with “${esc(text)}” in the name need moving.</p>`;
+  return `<div class="btn-row"><span class="small"><b>${list.length}</b> payment${list.length === 1 ? '' : 's'} · ${money(sum(list, t => t.amount))}</span>
+      <button type="button" class="btn sm" data-action="reviewAll" data-on="1">Tick all</button><button type="button" class="btn sm" data-action="reviewAll" data-on="0">Untick all</button></div>
+    <div class="imp-list">${list.map(t => `<label class="imp-row">
+      <input type="checkbox" name="sel" value="${t.id}" checked>
+      <div><b>${esc(t.desc)}</b><div class="meta">${fmtDate(t.date, { day: 'numeric', month: 'short', year: '2-digit' })} · now ${S.cat(t.categoryId).icon} ${esc(S.cat(t.categoryId).name)}</div></div>
+      <b class="tx-amt ${t.type}">${money(t.amount)}</b></label>`).join('')}</div>`;
+}
+
+export function similarSheet({ text = '', categoryId = '', exceptId = '', title } = {}) {
+  const c = categoryId && S.cat(categoryId);
+  openSheet(`${sheetHead(title || `Move other “${text}” payments too?`, c ? `To ${c.icon} ${c.name}` : 'Pick the words and the category')}
+  <form class="form" data-form="bulkMove">
+    <input type="hidden" name="exceptId" value="${esc(exceptId)}">
+    <div class="row2">
+      <label class="field"><span>Name contains</span><input name="text" value="${esc(text)}" placeholder="e.g. BWS" autocomplete="off"></label>
+      <label class="field"><span>Category</span><select name="categoryId"><option value="">Choose…</option>${allCatOptions(categoryId)}</select></label>
+    </div>
+    <div class="similar-list">${similarList(text, categoryId, exceptId)}</div>
+    <label class="check"><input type="checkbox" name="always" checked> Always put payments containing this into that category (new imports too)</label>
+    <div class="form-actions"><button class="btn primary" type="submit">Move &amp; save</button><button class="btn ghost" type="button" data-action="closeSheet">Not now</button></div>
+  </form>`, {
+    onMount: sheet => {
+      const f = $('form', sheet);
+      let timer;
+      const redraw = () => { clearTimeout(timer); timer = setTimeout(() => { $('.similar-list', sheet).innerHTML = similarList(f.text.value, f.categoryId.value, f.exceptId.value); }, 150); };
+      f.text.addEventListener('input', redraw);
+      f.categoryId.addEventListener('change', redraw);
+    },
+  });
+}
+
+function saveBulkMove(d, f) {
+  if (!d.categoryId) return toast('Pick a category');
+  const ids = $$('[name=sel]:checked', f).map(x => x.value);
+  if (d.always === 'on' && d.text.trim()) addWordRule(d.text, d.categoryId);
+  const before = ids.map(id => [id, S.byId('transactions', id)?.categoryId]);
+  for (const id of ids) {
+    const t = S.byId('transactions', id);
+    if (!t) continue;
+    t.categoryId = d.categoryId; t.updatedAt = Date.now();
+  }
+  S.save();
+  closeSheet();
+  const c = S.cat(d.categoryId);
+  const msg = ids.length ? `Moved ${ids.length} payment${ids.length === 1 ? '' : 's'} to ${c.icon} ${c.name}` : `Rule saved: “${d.text.trim()}” → ${c.name}`;
+  toast(msg, ids.length ? { label: 'Undo', fn: () => {
+    for (const [id, cat] of before) { const t = S.byId('transactions', id); if (t && cat) { t.categoryId = cat; t.updatedAt = Date.now(); } }
+    S.save();
+  } } : undefined);
+}
+
+// ---------- Category rules (Settings) ----------
+export function rulesSheet() {
+  const mine = wordRules(), learned = learnedRules();
+  const row = r => `<div class="rule-row"><span><b>“${esc(r.text)}”</b> → ${S.cat(r.categoryId).icon} ${esc(S.cat(r.categoryId).name)}</span>
+    <button class="icon-btn sm" data-action="deleteRule" data-key="${esc(r.key)}" aria-label="Delete rule">${icon('x', 16)}</button></div>`;
+  openSheet(`${sheetHead('Category rules', 'How C.A.S.H sorts payments automatically')}
+    <div class="btn-row"><button class="btn primary" data-action="newRule">${icon('plus', 18)} New rule</button></div>
+    <div class="section-title"><span>Your rules</span></div>
+    <div class="card list">${mine.map(row).join('') || '<p class="small muted pad">None yet. Add one, e.g. “BWS” → Alcohol. It moves past payments too.</p>'}</div>
+    ${learned.length ? `<div class="section-title"><span>Learned from your changes</span></div>
+    <p class="small muted">When you change a payment's category, C.A.S.H remembers that exact name.</p>
+    <div class="card list">${learned.map(row).join('')}</div>` : ''}`);
+}
+
 
 function deleteTx(id) {
   const t = S.byId('transactions', id);
@@ -616,7 +703,7 @@ export function welcome() {
 export const forms = {
   tx: saveTx, bill: saveBill, income: saveIncome, category: saveCategory,
   budgetHelper: applyBudgetHelper, pot: savePot, potEntry: savePotEntry,
-  account: saveAccount, balance: saveBalance, group: saveGroup,
+  account: saveAccount, balance: saveBalance, group: saveGroup, bulkMove: saveBulkMove,
 };
 
 export const actions = {
@@ -633,6 +720,10 @@ export const actions = {
   deleteIncome: el => { if (confirm('Delete this income?')) { S.remove('incomes', el.dataset.id); closeSheet(); } },
   toggleIncome: el => toggleScheduled('incomes', 'received', el.dataset.id, el.dataset.date),
   newCategory: el => categoryForm(null, el.dataset.group),
+  rules: () => rulesSheet(),
+  newRule: () => similarSheet({ title: 'New rule' }),
+  deleteRule: el => { removeRule(el.dataset.key); S.save(); rulesSheet(); toast('Rule deleted'); },
+  moveSearch: () => similarSheet({ text: view.filters.q.trim(), title: `Move “${view.filters.q.trim()}” payments` }),
   newGroup: () => groupForm(),
   editGroup: el => groupForm(S.byId('groups', el.dataset.id)),
   deleteGroup: el => deleteGroup(el),
