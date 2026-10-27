@@ -131,17 +131,19 @@ export function confetti({ count = 80, colors = ['#1baf7a', '#f2b33d'] } = {}) {
   })(t0);
 }
 
-// Numbers marked data-count="1234.5" count up from where they were last time.
+// Numbers marked data-count="1234.5" count up from where they were last time
+// (or from data-count-from). data-count-dp="0" for whole dollars.
 const shown = {};
 export function countUp(root = document) {
   for (const el of root.querySelectorAll('[data-count]')) {
     const to = +el.dataset.count, key = el.dataset.countKey || 'total';
-    const from = shown[key] ?? 0;
+    const from = el.dataset.countFrom != null ? +el.dataset.countFrom : shown[key] ?? 0;
     shown[key] = to;
     if (calm() || Math.abs(to - from) < 0.01) continue;
     const fmt = el.textContent.replace(/[\d.,\s]/g, '').replace('−', '') ;
-    const t0 = performance.now(), dur = 1100;
-    const nf = new Intl.NumberFormat(document.documentElement.lang || 'en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const t0 = performance.now(), dur = +(el.dataset.countMs || 1100);
+    const dp = el.dataset.countDp != null ? +el.dataset.countDp : 2;
+    const nf = new Intl.NumberFormat(document.documentElement.lang || 'en-AU', { minimumFractionDigits: dp, maximumFractionDigits: dp });
     (function tick(t) {
       const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
       el.textContent = fmt + nf.format(from + (to - from) * e);

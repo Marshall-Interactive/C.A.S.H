@@ -12,7 +12,9 @@ function sector(cx, cy, r0, r1, a0, a1) {
 }
 
 // segs: [{label, value, color}]
-export function donut(segs, { size = 180, thick = 24, center = '', sub = '' } = {}) {
+// sweep: draw the ring in clockwise. count: {value, key} makes the centre number tick up.
+let sweepId = 0;
+export function donut(segs, { size = 180, thick = 24, center = '', sub = '', sweep = false, count = null } = {}) {
   const c = size / 2, r1 = c - 2, r0 = r1 - thick;
   const total = segs.reduce((a, s) => a + Math.max(0, s.value), 0);
   let body;
@@ -30,8 +32,15 @@ export function donut(segs, { size = 180, thick = 24, center = '', sub = '' } = 
       return `<path d="${d}" fill="${s.color}" stroke="var(--surface)" stroke-width="2" data-tip="${esc(s.label)} · ${pct}%|${esc(money(s.value))}"${s.open ? ` ${s.open} class="slice"` : ''}/>`;
     }).join('');
   }
+  if (sweep && total) {
+    const id = 'sweep' + ++sweepId;
+    body = `<defs><mask id="${id}"><circle cx="${c}" cy="${c}" r="${(r0 + r1) / 2}" fill="none" stroke="#fff" stroke-width="${thick + 6}"
+      pathLength="100" stroke-dasharray="100 100" stroke-dashoffset="100" transform="rotate(-90 ${c} ${c})" class="sweep-mask"/></mask></defs>
+      <g mask="url(#${id})">${body}</g>`;
+  }
+  const counted = count ? ` data-count="${count.value}" data-count-key="${esc(count.key)}" data-count-dp="0"` : '';
   return `<svg viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(sub)} ${esc(center)}">${body}
-    <text x="${c}" y="${c + 2}" text-anchor="middle" class="donut-v">${esc(center)}</text>
+    <text x="${c}" y="${c + 2}" text-anchor="middle" class="donut-v"${counted}>${esc(center)}</text>
     <text x="${c}" y="${c + 20}" text-anchor="middle" class="donut-l">${esc(sub)}</text></svg>`;
 }
 

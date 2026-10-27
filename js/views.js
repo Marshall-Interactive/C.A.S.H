@@ -181,6 +181,8 @@ function byArea(spent) {
   return loose.value > 0.004 ? [...rows, loose] : rows;
 }
 
+let lastPie = '';
+export const replayPie = () => { lastPie = ''; };
 function moneyPie(spent, t, base, txs) {
   const mode = view.pieMode || 'income';
   const areas = byArea(spent);
@@ -213,19 +215,26 @@ function moneyPie(spent, t, base, txs) {
     if (g) heading = `<button class="link" data-action="pieBack">← All spending areas</button>`;
   }
   const total = sum(segs, s => s.value);
-  const legend = segs.map(s => {
+  // Play the sweep + count-up when what the pie shows changes (new view, new month, new data),
+  // not every time Home redraws for something else.
+  const sig = [mode, view.pieGroup, view.period, ...segs.map(s => s.value.toFixed(2))].join('|');
+  const fresh = sig !== lastPie;
+  lastPie = sig;
+  const centreValue = Math.round(mode === 'income' ? base : mode === 'areas' ? t.out : total);
+  const legend = segs.map((s, i) => {
     const pct = total ? Math.round((s.value / total) * 100) : 0;
-    const inner = `<i style="background:${s.color}"></i><span>${esc(s.label)}</span><b>${money(s.value, { whole: true })}</b><small>${pct}%</small>`;
+    const count = fresh ? ` data-count="${Math.round(s.value)}" data-count-key="pie-${i}" data-count-dp="0" data-count-from="0" data-count-ms="900"` : '';
+    const inner = `<i style="background:${s.color}"></i><span>${esc(s.label)}</span><b${count}>${money(s.value, { whole: true })}</b><small>${pct}%</small>`;
     return s.open ? `<button class="legend-row pie-row" ${s.open}>${inner}<i class="chev">›</i></button>` : `<div class="legend-row pie-row">${inner}</div>`;
   }).join('');
   return `<section class="card span2 pie-card">
     <h2>Where the money goes</h2>
     <div class="pie-layout">
-      <div class="chart pie-chart" ${mode === 'income' ? 'data-action="moneyIn" role="button" tabindex="0" aria-label="See money in"' : ''}>${donut(segs, { size: 200, thick: 30, center, sub })}</div>
+      <div class="chart pie-chart" ${mode === 'income' ? 'data-action="moneyIn" role="button" tabindex="0" aria-label="See money in"' : ''}>${donut(segs, { size: 200, thick: 30, center, sub, sweep: fresh, count: fresh ? { value: centreValue, key: 'pie' } : null })}</div>
       <div class="pie-side">
         <div class="seg small pie-modes" role="radiogroup" aria-label="Show">${PIE_MODES.map(([v, l]) => `<label><input type="radio" name="pieMode" value="${v}" ${mode === v ? 'checked' : ''} data-change="pieMode"><span>${l}</span></label>`).join('')}</div>
         ${heading}
-        <div class="legend">${legend || '<p class="small muted">Nothing to show for this month yet.</p>'}</div>
+        <div class="legend ${fresh ? 'stagger' : ''}">${legend || '<p class="small muted">Nothing to show for this month yet.</p>'}</div>
         ${note}
       </div>
     </div>

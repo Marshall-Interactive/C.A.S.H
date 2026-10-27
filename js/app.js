@@ -188,9 +188,12 @@ function route() {
   return { r: V.TITLES[r] ? r : 'home', sub };
 }
 
+let lastRoute = '';
 function render() {
   if (!S.getState()) return;
   const { r, sub } = route();
+  if (r !== lastRoute) V.replayPie(); // coming back to Home plays the pie again
+  lastRoute = r;
   $('#topbar').innerHTML = V.topbar(r);
   const main = $('#view');
   const scroll = window.scrollY;
