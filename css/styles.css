@@ -525,6 +525,16 @@ button.tally-row:hover { background: var(--surface-2); }
 .in-summary small { display: block; color: var(--muted); font-size: 12px; }
 .in-summary b { font-size: 20px; color: var(--good-ink); font-variant-numeric: tabular-nums; }
 .tx.static { cursor: default; }
+.stmt-tabs { margin-bottom: 10px; }
+.stmt-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.stmt-nav .icon-btn { font-size: 22px; }
+.stmt-sum { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 8px; }
+@media (min-width: 700px) { .stmt-sum { grid-template-columns: repeat(4, 1fr); } }
+.stmt-sum > div { background: var(--surface-2); border-radius: 12px; padding: 8px 10px; }
+.stmt-sum small { display: block; color: var(--muted); font-size: 12px; }
+.stmt-sum b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.stmt-bal { font-weight: 600; text-transform: none; letter-spacing: 0; }
+.stmt-link { display: inline-block; padding: 0; margin-top: 4px; }
 .card-month { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .card-link { display: inline-block; margin-top: 4px; padding: 0; }
 .card-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 6px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13.5px; font-variant-numeric: tabular-nums; }

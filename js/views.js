@@ -132,6 +132,7 @@ function accountMini(a) {
     <div class="acc-bal">${f.big}</div>
     ${f.bar}${f.lines}
     <p class="small muted">${f.updated}${f.change ? ' · ' + f.change : ''}</p>
+    <button class="link small stmt-link" data-action="statement" data-id="${a.id}">📄 Statement ›</button>
   </div>`;
 }
 
@@ -152,7 +153,7 @@ export function accountCard(a) {
     <p class="small muted">${f.updated}${f.change ? ' · ' + f.change : ''}</p>
     ${f.stale ? '<p class="notice small">● Time for an update — type the figures from your NAB app, or import a NAB statement.</p>' : ''}
     ${f.hist.length > 1 ? `<div class="pot-entries">${f.hist.slice(-5).reverse().map(h => `<div><span>${fmtDate(h.date)} ${who(h.by)}</span><b>${h.balance == null ? '—' : f.credit ? owed(h.balance) : signed(h.balance)}</b></div>`).join('')}</div>` : ''}
-    <div class="btn-row"><button class="btn sm primary" data-action="updateBalance" data-id="${a.id}">Update</button></div>
+    <div class="btn-row"><button class="btn sm primary" data-action="updateBalance" data-id="${a.id}">Update</button><button class="btn sm" data-action="statement" data-id="${a.id}">📄 Statement</button></div>
   </section>`;
 }
 
