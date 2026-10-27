@@ -525,6 +525,7 @@ button.tally-row:hover { background: var(--surface-2); }
 .in-summary small { display: block; color: var(--muted); font-size: 12px; }
 .in-summary b { font-size: 20px; color: var(--good-ink); font-variant-numeric: tabular-nums; }
 .tx.static { cursor: default; }
+.tx-amt.est { color: var(--muted); font-weight: 600; }
 .in-summary.out b { color: var(--ink); }
 .in-summary.out b.neg { color: var(--bad-ink); }
 .in-summary small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

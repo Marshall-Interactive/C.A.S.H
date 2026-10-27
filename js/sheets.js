@@ -3,7 +3,7 @@ import * as S from './store.js';
 import { esc, money, todayISO, parseAmount, round2, currencySymbol, FREQS, sum, perMonth, periodOf, $, $$ } from './util.js';
 import { openSheet, closeSheet, sheetHead, toast, icon, view, confetti, buzz } from './ui.js';
 import { guessCategory, learn } from './categorise.js';
-import { expectedIn, incomeAmount } from './calc.js';
+import { expectedIn, incomeAmount, relinkIncomes } from './calc.js';
 import { potSaved, potPct, MILESTONES } from './views.js';
 
 // ---------- small form builders ----------
@@ -200,9 +200,11 @@ function saveIncome(d) {
   S.upsert('incomes', {
     id: d.id || undefined, name: d.name.trim(), amount, member: d.member, frequency: d.frequency,
     dueDay: +d.dueDay || 1, anchorDate: d.anchorDate, keywords: d.keywords.trim(), active: d.active === 'on', varies: d.varies === 'on',
-  });
+  }, { silent: true });
+  const found = relinkIncomes();
+  S.save();
   closeSheet();
-  toast(d.id ? 'Income saved' : 'Income added');
+  toast((d.id ? 'Income saved' : 'Income added') + (found ? ` · ${found} pay${found === 1 ? '' : 's'} found in your imports` : ''));
 }
 
 // ---------- Categories & budget ----------
