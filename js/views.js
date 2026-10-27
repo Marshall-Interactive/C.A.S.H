@@ -6,6 +6,7 @@ import { donut, inOutBars } from './charts.js';
 import { icon, view, sheetHead } from './ui.js';
 import * as Sync from './sync.js';
 import { yearTab, yearCard } from './year.js';
+import { streakCard, sweepCard } from './motivate.js';
 
 export const TITLES = { home: 'Home', activity: 'Activity', plan: 'Plan', savings: 'Savings', settings: 'Settings' };
 
@@ -448,7 +449,7 @@ export function home() {
     <div class="hbar">${byMember.map(x => `<span>${who(x.m)}</span><span class="track"><i style="width:${(x.v / bmMax) * 100}%;background:${S.memberColor(x.m)}"></i></span><b>${money(x.v, { whole: true })}</b>`).join('')}</div>
   </section>`;
 
-  return `<div class="grid cols">${hero}${pie}${accountsHome()}${budget}${billsCard}${recent}${yearCard()}${trend}${whoCard}</div>`;
+  return `<div class="grid cols">${hero}${sweepCard()}${pie}${accountsHome()}${streakCard()}${budget}${billsCard}${recent}${yearCard()}${trend}${whoCard}</div>`;
 }
 
 export function billRow(r) {
@@ -724,6 +725,11 @@ function potCard(p) {
     const months = Math.max(1, (fromISO(p.targetDate) - new Date()) / (864e5 * 30.44));
     pace = `<p class="small">Save <b>${money((goal - saved) / months)}</b> a month to reach it by ${fmtDate(p.targetDate, { month: 'short', year: 'numeric' })}</p>`;
   } else if (goal && next) pace = `<p class="small">${money((goal * next) / 100 - saved)} to go until ${next}%</p>`;
+  const cur = periodOf(currentPeriodKey());
+  const shares = {};
+  for (const e of p.entries || []) { const d = fromISO(e.date); if (d >= cur.start && d < cur.end && e.amount > 0 && e.by) shares[e.by] = (shares[e.by] || 0) + e.amount; }
+  const shareLine = Object.keys(shares).length ? `<div class="pot-shares"><span class="small muted">This month:</span>${Object.entries(shares).sort((a, b) => b[1] - a[1]).map(([m, v]) =>
+    `<span class="share" style="--c:${S.memberColor(m)}"><i></i>${esc(m)} <b>${money(v, { whole: true })}</b></span>`).join('')}</div>` : '';
   return `<section class="card pot" style="--pot:${potColor(p)}">
     <div class="pot-top">
       <div class="pot-jar">${jar(p)}<span class="pot-emoji">${p.icon || '🐷'}</span></div>
@@ -735,6 +741,7 @@ function potCard(p) {
       </div>
     </div>
     ${pace}
+    ${shareLine}
     <div class="quick-add">${[20, 50, 100].map(a => `<button class="btn sm quick" data-action="potQuick" data-id="${p.id}" data-amt="${a}">+${money(a, { whole: true })}</button>`).join('')}
       <button class="btn sm" data-action="potIn" data-id="${p.id}">＋ Other</button>
       <button class="btn sm ghost" data-action="potOut" data-id="${p.id}" title="Take money out">−</button></div>
