@@ -530,6 +530,14 @@ button.tally-row:hover { background: var(--surface-2); }
 .in-summary.out b.neg { color: var(--bad-ink); }
 .in-summary small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pie-chart path.slice { cursor: pointer; transition: opacity .15s; }
+.sweep-mask { animation: pie-sweep 1s cubic-bezier(.3,.7,.2,1) .05s forwards; }
+@keyframes pie-sweep { to { stroke-dashoffset: 0; } }
+.legend.stagger .pie-row { opacity: 0; transform: translateX(10px); animation: row-in .4s ease-out forwards; }
+.legend.stagger .pie-row:nth-child(2) { animation-delay: .08s; } .legend.stagger .pie-row:nth-child(3) { animation-delay: .16s; }
+.legend.stagger .pie-row:nth-child(4) { animation-delay: .24s; } .legend.stagger .pie-row:nth-child(5) { animation-delay: .32s; }
+.legend.stagger .pie-row:nth-child(6) { animation-delay: .4s; } .legend.stagger .pie-row:nth-child(n+7) { animation-delay: .48s; }
+@keyframes row-in { to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sweep-mask { animation: none; stroke-dashoffset: 0; } .legend.stagger .pie-row { animation: none; opacity: 1; transform: none; } }
 .pie-chart path.slice:hover { opacity: .82; }
 .section-title .cat-link { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
 .pie-row .chev { font-style: normal; color: var(--muted); }

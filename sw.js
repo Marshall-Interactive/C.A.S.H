@@ -1,5 +1,5 @@
 // Service worker: lets C.A.S.H open offline and receive shared screenshots.
-const CACHE = 'cash-v16';
+const CACHE = 'cash-v17';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
   'js/app.js', 'js/store.js', 'js/util.js', 'js/ui.js', 'js/views.js', 'js/sheets.js',
