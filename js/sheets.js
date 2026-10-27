@@ -5,6 +5,7 @@ import { openSheet, closeSheet, sheetHead, toast, icon, view, confetti, buzz } f
 import { guessCategory, learn, hasText, similarText, addWordRule, removeRule, wordRules, learnedRules } from './categorise.js';
 import { expectedIn, incomeAmount, relinkIncomes } from './calc.js';
 import { potSaved, potPct, MILESTONES } from './views.js';
+import { streakCats } from './motivate.js';
 
 // ---------- small form builders ----------
 export function catOptions(type, selected, { blank = '' } = {}) {
@@ -573,6 +574,54 @@ function savePotEntry(d) {
   toast(msg || (isIn ? `💰 ${money(amount)} added to ${p.name}` : `${money(amount)} taken from ${p.name}`));
 }
 
+// ---------- Sweep last month's leftovers into a pot ----------
+function sweepForm(key, amount) {
+  const pots = S.list('pots');
+  const name = periodOf(key).start.toLocaleDateString('en-AU', { month: 'long' });
+  openSheet(`${sheetHead(`Sweep ${name}'s leftovers`, 'Put it somewhere it can grow')}
+  <form class="form" data-form="sweep">
+    <input type="hidden" name="key" value="${key}">
+    ${amountField(amount, true)}
+    <label class="field"><span>Into</span><select name="pot">${pots.map(p => `<option value="${p.id}">${p.icon || '🐷'} ${esc(p.name)}${p.goal ? ` (${money(potSaved(p), { whole: true })} of ${money(p.goal, { whole: true })})` : ''}</option>`).join('')}</select></label>
+    <label class="check"><input type="checkbox" name="record"> Count it as money out of this month's budget</label>
+    <p class="small muted">Leave that unticked if the money is already sitting in your account — this just tracks it in the pot.</p>
+    <div class="form-actions"><button class="btn primary" type="submit">Sweep it 🧹</button></div>
+  </form>`);
+}
+
+function saveSweep(d) {
+  const p = S.byId('pots', d.pot);
+  const amount = round2(parseAmount(d.amount));
+  if (!p || !(amount > 0)) return toast('Enter an amount');
+  const before = potPct(p);
+  addToPot(p, amount, { note: `${periodOf(d.key).start.toLocaleDateString('en-AU', { month: 'long' })} leftovers`, record: d.record === 'on' });
+  try { localStorage.setItem('cash.swept', d.key); } catch {}
+  closeSheet();
+  const msg = cheer(S.byId('pots', p.id), before);
+  toast(msg || `🧹 ${money(amount)} swept into ${p.name}`);
+}
+
+// ---------- No-spend streak categories ----------
+function streakForm() {
+  const on = new Set(streakCats());
+  openSheet(`${sheetHead('No-spend streak', 'Which spending breaks the streak?')}
+  <form class="form" data-form="streak">
+    <div class="check-list">${S.list('categories').filter(c => (c.type || 'out') === 'out').map(c =>
+      `<label class="check"><input type="checkbox" name="cat" value="${c.id}" ${on.has(c.id) ? 'checked' : ''}> ${c.icon} ${esc(c.name)}</label>`).join('')}</div>
+    <div class="form-actions"><button class="btn primary" type="submit">Save</button></div>
+  </form>`);
+}
+
+function saveStreak(d, f) {
+  const cats = $$('[name=cat]:checked', f).map(x => x.value);
+  const st = S.settings();
+  st.noSpendCats = cats;
+  st.sharedUpdatedAt = Date.now();
+  S.save();
+  closeSheet();
+  toast(cats.length ? 'Streak updated' : 'Streak turned off');
+}
+
 function quickAdd(el) {
   const p = S.byId('pots', el.dataset.id);
   const amount = +el.dataset.amt;
@@ -727,7 +776,7 @@ export function welcome() {
 export const forms = {
   tx: saveTx, bill: saveBill, income: saveIncome, category: saveCategory,
   budgetHelper: applyBudgetHelper, pot: savePot, potEntry: savePotEntry,
-  account: saveAccount, balance: saveBalance, group: saveGroup, bulkMove: saveBulkMove,
+  account: saveAccount, balance: saveBalance, group: saveGroup, bulkMove: saveBulkMove, sweep: saveSweep, streak: saveStreak,
 };
 
 export const actions = {
@@ -746,6 +795,9 @@ export const actions = {
   newCategory: el => categoryForm(null, el.dataset.group),
   rules: () => rulesSheet(),
   repeatSpend: el => repeatSpend(el),
+  sweep: el => sweepForm(el.dataset.key, +el.dataset.amount),
+  sweepSkip: el => { try { localStorage.setItem('cash.swept', el.dataset.key); } catch {} S.save(); toast('Okay — maybe next month'); },
+  streakCats: () => streakForm(),
   newRule: () => similarSheet({ title: 'New rule' }),
   deleteRule: el => { removeRule(el.dataset.key); S.save(); rulesSheet(); toast('Rule deleted'); },
   moveSearch: () => similarSheet({ text: view.filters.q.trim(), title: `Move “${view.filters.q.trim()}” payments` }),

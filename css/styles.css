@@ -525,6 +525,21 @@ button.tally-row:hover { background: var(--surface-2); }
 .in-summary small { display: block; color: var(--muted); font-size: 12px; }
 .in-summary b { font-size: 20px; color: var(--good-ink); font-variant-numeric: tabular-nums; }
 .tx.static { cursor: default; }
+.streak-main { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.streak-fire { font-size: 40px; line-height: 1; animation: party-bounce 1.2s ease-in-out infinite alternate; }
+.streak-n { font-size: 24px; display: block; }
+.streak-main small { color: var(--muted); }
+.streak-days { display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; }
+.streak-days i { height: 10px; border-radius: 3px; background: var(--good); opacity: .75; }
+.streak-days i.spent { background: var(--bad); opacity: .55; }
+.sweep-card { display: flex; gap: 12px; align-items: flex-start; background: color-mix(in srgb, var(--gold) 14%, var(--surface)); border-color: color-mix(in srgb, var(--gold) 40%, transparent); }
+.sweep-ic { font-size: 34px; line-height: 1; }
+.sweep-card p { margin: 4px 0 8px; }
+.pot-shares { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0; }
+.share { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
+.share i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+.check-list { display: grid; gap: 2px; max-height: 50vh; overflow: auto; }
+@media (prefers-reduced-motion: reduce) { .streak-fire { animation: none; } }
 .recap-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .recap-btn { margin: 4px 0 8px; }
 /* ---- Month wrapped ---- */
