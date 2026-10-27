@@ -7,6 +7,7 @@ import * as Sheets from './sheets.js';
 import * as Flows from './flows.js';
 import { demoState } from './demo.js';
 import { thisYear } from './year.js';
+import { showWrapped, maybeShowWrapped } from './wrapped.js';
 import * as Sync from './sync.js';
 
 const actions = {
@@ -18,6 +19,7 @@ const actions = {
   thisPeriod: () => { resetPeriod(); render(); },
   pieDrill: el => { view.pieMode = 'categories'; view.pieGroup = el.dataset.id; render(); },
   moneyIn: () => openSheet(V.moneyInSheet()),
+  wrapped: el => showWrapped(el.dataset.key),
   prevYear: () => { view.year = (view.year ?? thisYear()) - 1; render(); },
   nextYear: () => { view.year = (view.year ?? thisYear()) + 1; render(); },
   thisYear: () => { view.year = thisYear(); render(); },
@@ -311,6 +313,7 @@ Sync.onStatus(() => {
 Sync.start();
 if (!handleShortcut(location.hash.slice(1))) render();
 if (firstRun) Sheets.welcome();
+else maybeShowWrapped();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW', err));

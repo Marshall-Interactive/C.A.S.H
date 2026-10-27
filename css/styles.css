@@ -525,6 +525,45 @@ button.tally-row:hover { background: var(--surface-2); }
 .in-summary small { display: block; color: var(--muted); font-size: 12px; }
 .in-summary b { font-size: 20px; color: var(--good-ink); font-variant-numeric: tabular-nums; }
 .tx.static { cursor: default; }
+.recap-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.recap-btn { margin: 4px 0 8px; }
+/* ---- Month wrapped ---- */
+.wrapped { position: fixed; inset: 0; z-index: 110; color: #fff; overflow: hidden; user-select: none; cursor: pointer; animation: w-in .3s ease-out; }
+.wrapped.out { animation: w-out .25s ease-in forwards; }
+@keyframes w-in { from { opacity: 0; transform: scale(1.04); } } @keyframes w-out { to { opacity: 0; transform: scale(.98); } }
+.w-progress { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 56px; display: flex; gap: 4px; z-index: 2; }
+.w-progress i { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,.3); transition: background .3s; }
+.w-progress i.done { background: #fff; }
+.w-close { position: absolute; top: calc(2px + env(safe-area-inset-top)); right: 10px; z-index: 3; background: none; border: 0; color: #fff; font-size: 22px; width: 40px; height: 40px; cursor: pointer; }
+.w-slide { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 60px 28px 40px; gap: 10px;
+  background: linear-gradient(160deg, #0f6b5c, #0a3f37); }
+.w-slide.on { display: flex; }
+.w-slide.on > * { animation: w-rise .5s cubic-bezier(.2,.8,.2,1) backwards; }
+.w-slide.on > *:nth-child(2) { animation-delay: .12s; } .w-slide.on > *:nth-child(3) { animation-delay: .24s; } .w-slide.on > *:nth-child(4) { animation-delay: .36s; } .w-slide.on > *:nth-child(5) { animation-delay: .48s; }
+@keyframes w-rise { from { opacity: 0; transform: translateY(18px); } }
+.w-slide h2 { font-size: clamp(28px, 8vw, 44px); line-height: 1.1; margin: 0; font-weight: 800; }
+.w-slide p { margin: 0; font-size: 17px; opacity: .92; max-width: 420px; }
+.w-k { text-transform: uppercase; letter-spacing: .1em; font-size: 13px !important; font-weight: 700; opacity: .8 !important; }
+.w-big { font-size: clamp(46px, 15vw, 84px); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; color: #ffd56e; }
+.w-emoji { font-size: 84px; line-height: 1; animation: party-bounce .9s ease-in-out infinite alternate !important; }
+.w-mid { font-size: 22px !important; }
+.w-intro { background: linear-gradient(160deg, #6250d6, #2a1f7a); }
+.w-in { background: linear-gradient(160deg, #1d7fd8, #0b3d70); }
+.w-out { background: linear-gradient(160deg, #eb6834, #8a2c0e); }
+.w-cat { background: linear-gradient(160deg, #d55181, #6e1a3c); }
+.w-shop { background: linear-gradient(160deg, #c98500, #6b4300); }
+.w-who { background: linear-gradient(160deg, #3a4bd0, #161f66); }
+.w-saved { background: linear-gradient(160deg, #199e70, #08452f); }
+.w-left.up { background: linear-gradient(160deg, #1baf7a, #0a3f37); }
+.w-left.down { background: linear-gradient(160deg, #d03b3b, #5e1212); }
+.w-end { background: linear-gradient(160deg, #0f6b5c, #0a3f37); }
+.w-end .btn { margin-top: 12px; }
+.w-badge { background: rgba(255,255,255,.18); padding: 6px 14px; border-radius: 999px; font-weight: 700; }
+.w-bars { width: min(100%, 420px); display: grid; gap: 14px; margin-top: 10px; }
+.w-bar { display: grid; grid-template-columns: 70px 1fr auto; align-items: center; gap: 10px; font-size: 17px; text-align: left; }
+.w-bar i { height: 18px; border-radius: 9px; width: var(--w); animation: w-grow 1s cubic-bezier(.2,.8,.2,1) .3s backwards; }
+@keyframes w-grow { from { width: 0; } }
+@media (prefers-reduced-motion: reduce) { .wrapped, .w-slide.on > *, .w-emoji, .w-bar i { animation: none !important; } }
 .pace { position: relative; z-index: 1; margin-top: 10px; font-size: 13.5px; padding: 6px 10px; border-radius: 10px; background: rgba(255, 255, 255, .12); display: inline-block; }
 .pace.down { background: rgba(255, 120, 120, .2); }
 .chips.repeat { flex-wrap: wrap; overflow: visible; max-height: none; }

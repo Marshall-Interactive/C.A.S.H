@@ -6,6 +6,7 @@ import { esc, money, sum, periodOf, shiftPeriod, currentPeriodKey, toISO, addDay
 import { txInPeriod, spendLines, totals, expectedIn } from './calc.js';
 import { inOutBars } from './charts.js';
 import { view } from './ui.js';
+import { hasRecap } from './wrapped.js';
 
 const saved = (key, k) => { try { return localStorage.getItem(key) || k; } catch { return k; } };
 view.yearKind ||= saved('cash.yearKind', 'cal');   // calendar year or Australian financial year
@@ -168,6 +169,11 @@ export function yearTab() {
       <p class="small muted">Green = money left over, red = more went out than came in. Tap one to open it.</p>
       ${view.yearView === 'week' ? weekTiles(d) : monthTiles(d)}
     </section>
+    ${(() => {
+      const done = d.months.filter(m => m.when === 'past' && hasRecap(m.key)).reverse();
+      return done.length ? `<section class="card"><h2>🎁 Month recaps</h2><p class="small muted">Replay any month's story.</p>
+        <div class="recap-chips">${done.map(m => `<button class="btn sm" data-action="wrapped" data-key="${m.key}">${m.p.start.toLocaleDateString('en-AU', { month: 'long' })}</button>`).join('')}</div></section>` : '';
+    })()}
   </div>`;
 }
 
@@ -182,6 +188,7 @@ export function yearCard() {
       <div><small>Went out</small><b>${money(d.sofar.out, { whole: true })}</b></div>
       <div><small>${d.sofar.net >= 0 ? 'Left over' : 'Overspent'}</small><b class="${d.sofar.net >= 0 ? 'pos' : 'neg'}">${money(Math.abs(d.sofar.net), { whole: true })}</b></div>
     </div>
+    ${(() => { const k = shiftPeriod(currentPeriodKey(), -1); return hasRecap(k) ? `<button class="btn sm recap-btn" data-action="wrapped" data-key="${k}">🎁 ${periodOf(k).start.toLocaleDateString('en-AU', { month: 'long' })} wrapped</button>` : ''; })()}
     <p class="small muted">${d.outlook.net >= 0 ? `🔭 On track for ${money(d.outlook.net, { whole: true })} left over by the end of ${esc(yearLabel(y))}` : `🔭 Heading for ${money(-d.outlook.net, { whole: true })} overspent by the end of ${esc(yearLabel(y))}`}</p>
   </section>`;
 }
