@@ -14,8 +14,8 @@ export function spendLines(txs) {
   const out = [];
   for (const t of txs) {
     if (t.type !== 'out' || S.isTransfer(t.categoryId)) continue;
-    if (t.splits?.length) t.splits.forEach(s => out.push({ categoryId: s.categoryId, amount: +s.amount }));
-    else out.push({ categoryId: t.categoryId, amount: +t.amount });
+    if (t.splits?.length) t.splits.forEach(s => out.push({ categoryId: s.categoryId, amount: +s.amount, tx: t }));
+    else out.push({ categoryId: t.categoryId, amount: +t.amount, tx: t });
   }
   return out;
 }

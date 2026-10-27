@@ -17,6 +17,13 @@ const actions = {
   thisPeriod: () => { resetPeriod(); render(); },
   pieDrill: el => { view.pieMode = 'categories'; view.pieGroup = el.dataset.id; render(); },
   moneyIn: () => openSheet(V.moneyInSheet()),
+  spendList: el => openSheet(V.spendSheet(el.dataset.kind, el.dataset.id)),
+  pieDrillFromSheet: el => { closeSheet(); view.pieMode = 'categories'; view.pieGroup = el.dataset.id; setTimeout(render, 60); },
+  catActivity: el => {
+    view.filters = { type: 'out', q: '', categoryId: el.dataset.id, member: '' };
+    closeSheet();
+    setTimeout(() => { location.hash = '#activity'; }, 60);
+  },
   moneyInActivity: () => {
     view.filters = { type: 'in', q: '', categoryId: '', member: '' };
     closeSheet();

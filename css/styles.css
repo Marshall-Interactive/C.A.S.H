@@ -525,6 +525,12 @@ button.tally-row:hover { background: var(--surface-2); }
 .in-summary small { display: block; color: var(--muted); font-size: 12px; }
 .in-summary b { font-size: 20px; color: var(--good-ink); font-variant-numeric: tabular-nums; }
 .tx.static { cursor: default; }
+.in-summary.out b { color: var(--ink); }
+.in-summary.out b.neg { color: var(--bad-ink); }
+.in-summary small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pie-chart path.slice { cursor: pointer; transition: opacity .15s; }
+.pie-chart path.slice:hover { opacity: .82; }
+.pie-row .chev { font-style: normal; color: var(--muted); }
 .tx-amt.muted { color: var(--muted); }
 .tally-row.total { margin-top: 6px; border-top: 2px solid var(--line-2); padding-top: 12px; font-size: 18px; }
 .tally-row.total span { color: var(--ink); font-weight: 700; }
