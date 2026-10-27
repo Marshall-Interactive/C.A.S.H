@@ -96,6 +96,60 @@ export function toast(msg, action) {
   toastTimer = setTimeout(() => t.classList.remove('show'), action ? 5000 : 2600);
 }
 
+// ---------- celebrations ----------
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+export const buzz = pattern => { try { if (!calm()) navigator.vibrate?.(pattern); } catch {} };
+
+export function confetti({ count = 80, colors = ['#1baf7a', '#f2b33d'] } = {}) {
+  if (calm()) return;
+  const c = document.createElement('canvas');
+  c.className = 'confetti';
+  const dpr = devicePixelRatio || 1, w = innerWidth, h = innerHeight;
+  c.width = w * dpr; c.height = h * dpr;
+  document.body.appendChild(c);
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const bits = Array.from({ length: count }, () => ({
+    x: w / 2 + (Math.random() - 0.5) * w * 0.3, y: h * 0.42,
+    vx: (Math.random() - 0.5) * 13, vy: -6 - Math.random() * 10,
+    r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.35,
+    s: 6 + Math.random() * 7, color: colors[Math.floor(Math.random() * colors.length)], coin: Math.random() < 0.18,
+  }));
+  const t0 = performance.now(), life = 2300;
+  (function frame(t) {
+    const k = (t - t0) / life;
+    ctx.clearRect(0, 0, w, h);
+    ctx.globalAlpha = k > 0.7 ? Math.max(0, 1 - (k - 0.7) / 0.3) : 1;
+    for (const b of bits) {
+      b.vy += 0.32; b.vx *= 0.99; b.x += b.vx; b.y += b.vy; b.r += b.vr;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.fillStyle = b.color;
+      if (b.coin) { ctx.beginPath(); ctx.ellipse(0, 0, b.s * 0.6, b.s * 0.6 * Math.abs(Math.cos(b.r * 2)) + 1, 0, 0, Math.PI * 2); ctx.fillStyle = '#f2b33d'; ctx.fill(); }
+      else ctx.fillRect(-b.s / 2, -b.s / 4, b.s, b.s / 2);
+      ctx.restore();
+    }
+    if (k < 1) requestAnimationFrame(frame); else c.remove();
+  })(t0);
+}
+
+// Numbers marked data-count="1234.5" count up from where they were last time.
+const shown = {};
+export function countUp(root = document) {
+  for (const el of root.querySelectorAll('[data-count]')) {
+    const to = +el.dataset.count, key = el.dataset.countKey || 'total';
+    const from = shown[key] ?? 0;
+    shown[key] = to;
+    if (calm() || Math.abs(to - from) < 0.01) continue;
+    const fmt = el.textContent.replace(/[\d.,\s]/g, '').replace('−', '') ;
+    const t0 = performance.now(), dur = 1100;
+    const nf = new Intl.NumberFormat(document.documentElement.lang || 'en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    (function tick(t) {
+      const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      el.textContent = fmt + nf.format(from + (to - from) * e);
+      if (k < 1 && el.isConnected) requestAnimationFrame(tick);
+    })(t0);
+  }
+}
+
 // ---- chart tooltips: any element with data-tip="Label|Value" ----
 function showTip(el, e) {
   const tip = $('#tip');

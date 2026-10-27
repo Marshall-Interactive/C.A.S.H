@@ -1,6 +1,6 @@
 // The main screens. Each returns an HTML string for <main>.
 import * as S from './store.js';
-import { esc, money, sum, periodOf, shiftPeriod, relDay, fmtDate, perMonth, FREQS, fromISO, todayISO } from './util.js';
+import { esc, money, sum, periodOf, shiftPeriod, relDay, fmtDate, perMonth, FREQS, fromISO, todayISO, round2, currentPeriodKey } from './util.js';
 import { txInPeriod, spentByCategory, totals, billsInPeriod, incomesInPeriod, expectedIn, nextDue, incomeAmount } from './calc.js';
 import { donut, inOutBars } from './charts.js';
 import { icon, view } from './ui.js';
@@ -460,45 +460,118 @@ function wagesTab() {
 
 // ---------- Savings ----------
 export const potSaved = pot => sum(pot.entries || [], e => e.amount);
+export const potColor = p => `var(--s${p.slot || 3})`;
+export const MILESTONES = [25, 50, 75, 100];
+export const potPct = p => (+p.goal ? Math.max(0, (potSaved(p) / p.goal) * 100) : 0);
+
+// Remember how full each jar was last time, so it rises from there (not from empty).
+const lastFill = {};
+
+// A jar that fills with gently moving "liquid" in the pot's colour.
+function jar(p) {
+  const pct = Math.min(100, potPct(p));
+  const from = lastFill[p.id] ?? 0;
+  lastFill[p.id] = pct;
+  const top = 26, bottom = 112, h = bottom - top;
+  const y = bottom - (h * pct) / 100;
+  const rise = ((pct - from) / 100) * h;
+  const wave = `M0 ${y} q12.5 -5 25 0 t25 0 t25 0 t25 0 t25 0 t25 0 t25 0 t25 0 V120 H0 Z`;
+  const id = 'jar' + p.id;
+  return `<svg class="jar" viewBox="0 0 100 120" role="img" aria-label="${Math.round(pct)}% full">
+    <defs><clipPath id="${id}"><rect x="14" y="24" width="72" height="90" rx="18"/></clipPath></defs>
+    <rect x="30" y="6" width="40" height="12" rx="4" class="jar-lid"/>
+    <rect x="24" y="16" width="52" height="10" rx="4" class="jar-neck"/>
+    <g clip-path="url(#${id})">
+      <rect x="0" y="0" width="100" height="120" class="jar-glass"/>
+      <g class="jar-fill" style="--rise:${rise.toFixed(1)}px">
+        ${pct > 0 ? `<path d="${wave}" fill="${potColor(p)}" opacity=".35" class="jar-wave slow"/>
+        <path d="${wave}" fill="${potColor(p)}" class="jar-wave" transform="translate(0 3)"/>
+        ${pct >= 30 ? `<circle cx="34" cy="${bottom - 8}" r="5" class="jar-coin"/><circle cx="48" cy="${bottom - 5}" r="5" class="jar-coin"/><circle cx="62" cy="${bottom - 9}" r="5" class="jar-coin"/>` : ''}` : ''}
+      </g>
+    </g>
+    <rect x="14" y="24" width="72" height="90" rx="18" class="jar-outline"/>
+    <rect x="22" y="34" width="6" height="56" rx="3" class="jar-shine"/>
+  </svg>`;
+}
+
+// One big ring for all the goals together.
+function ring(pct) {
+  const r = 52, c = 2 * Math.PI * r, p = Math.min(100, pct);
+  return `<svg class="save-ring" viewBox="0 0 120 120" aria-hidden="true">
+    <circle cx="60" cy="60" r="${r}" class="ring-track"/>
+    <circle cx="60" cy="60" r="${r}" class="ring-fill" stroke-dasharray="${c}" stroke-dashoffset="${c}" style="--to:${c * (1 - p / 100)}" transform="rotate(-90 60 60)"/>
+  </svg>`;
+}
+
+function savingsStats(pots) {
+  const entries = pots.flatMap(p => (p.entries || []).map(e => ({ ...e, pot: p })));
+  const cur = periodOf(view.period === currentPeriodKey() ? view.period : currentPeriodKey());
+  const net = pk => { const pp = periodOf(pk); return sum(entries.filter(e => { const d = fromISO(e.date); return d >= pp.start && d < pp.end; }), e => e.amount); };
+  const thisMonth = net(cur.key);
+  // streak: months in a row with more going in than out (this month counts once it has started)
+  let streak = 0, k = thisMonth > 0 ? 0 : -1;
+  while (streak < 60 && net(shiftPeriod(cur.key, k)) > 0) { streak++; k--; }
+  const feed = entries.filter(e => !/starting balance/i.test(e.note || '')).sort((a, b) => b.date.localeCompare(a.date) || (b.at || 0) - (a.at || 0)).slice(0, 6);
+  return { thisMonth, streak, feed };
+}
 
 export function savings() {
   const pots = S.list('pots');
   const total = sum(pots, potSaved);
   const goal = sum(pots, p => +p.goal || 0);
+  const pct = goal ? (total / goal) * 100 : 0;
+  const reached = pots.filter(p => p.goal && potSaved(p) >= p.goal).length;
+  const st = savingsStats(pots);
   const accs = S.list('accounts');
-  return `<div class="section-title first"><span>Accounts</span><span><button class="link" data-action="newAccount">${icon('plus', 14)} Add account</button></span></div>
-    <div class="pots">${accs.map(accountCard).join('') || `<div class="card">${empty('🏦', 'Add your offset account and credit card to track their balances.')}</div>`}</div>
-    <div class="section-title"><span>Savings pots</span></div>
-  <div class="grid">
-    <section class="card hero gold">
-      <div class="hero-top"><span class="label">Total saved</span><span class="label">${pots.length} pot${pots.length === 1 ? '' : 's'}</span></div>
-      <div class="big">${money(total)}</div>
-      <div class="sub">${goal ? `${Math.round((total / goal) * 100)}% of your ${money(goal, { whole: true })} goals` : 'Create a pot for each thing you are saving for'}</div>
-      <div class="meter"><i style="width:${goal ? Math.min(100, (total / goal) * 100) : 0}%"></i></div>
+  return `<div class="grid">
+    <section class="card save-hero">
+      <div class="save-hero-ring">${ring(pct)}<div class="ring-label"><b>${goal ? Math.round(pct) + '%' : '🐷'}</b><small>${goal ? 'of goals' : 'start saving'}</small></div></div>
+      <div class="save-hero-main">
+        <span class="label">Total saved</span>
+        <div class="big" data-count="${round2(total)}">${money(total)}</div>
+        <div class="save-chips">
+          <span class="save-chip ${st.thisMonth > 0 ? 'up' : ''}">${st.thisMonth >= 0 ? '▲' : '▼'} ${money(Math.abs(st.thisMonth), { whole: true })} this month</span>
+          ${st.streak ? `<span class="save-chip fire">🔥 ${st.streak}-month streak</span>` : ''}
+          ${pots.length ? `<span class="save-chip">🏆 ${reached} of ${pots.filter(p => p.goal).length || pots.length} goals</span>` : ''}
+        </div>
+      </div>
     </section>
-    <div class="btn-row"><button class="btn primary" data-action="newPot">${icon('plus', 18)} New savings pot</button></div>
-    <div class="pots">${pots.map(potCard).join('') || `<div class="card">${empty('🐷', 'No pots yet — try an Emergency fund, Holiday or Christmas pot.')}</div>`}</div>
+    <div class="section-title first"><span>Savings pots</span><span><button class="link" data-action="newPot">${icon('plus', 14)} New pot</button></span></div>
+    <div class="pots">${pots.map(potCard).join('') || `<div class="card">${empty('🫙', 'No pots yet — start one for an Emergency fund, Holiday or Christmas and watch it fill up.', `<br><button class="btn primary sm" data-action="newPot">Start a pot</button>`)}</div>`}</div>
+    ${st.feed.length ? `<div class="section-title"><span>Recent savings</span></div>
+    <div class="card list save-feed">${st.feed.map(e => `<div class="feed-row">
+      <span class="feed-ic" style="--c:${potColor(e.pot)}">${e.pot.icon || '🐷'}</span>
+      <span class="feed-main">${e.by ? who(e.by) + ' ' : ''}${e.amount >= 0 ? 'added' : 'took'} <b>${money(Math.abs(e.amount))}</b> ${e.amount >= 0 ? 'to' : 'from'} ${esc(e.pot.name)}<small>${relDay(e.date)}${e.note ? ' · ' + esc(e.note) : ''}</small></span>
+      <b class="${e.amount >= 0 ? 'pos' : ''}">${money(e.amount, { sign: true, whole: true })}</b></div>`).join('')}</div>` : ''}
+    <div class="section-title"><span>Accounts</span><span><button class="link" data-action="newAccount">${icon('plus', 14)} Add account</button></span></div>
+    <div class="pots">${accs.map(accountCard).join('') || `<div class="card">${empty('🏦', 'Add your offset account and credit card to track their balances.')}</div>`}</div>
   </div>`;
 }
 
 function potCard(p) {
   const saved = potSaved(p), goal = +p.goal || 0;
-  const pct = goal ? Math.min(100, (saved / goal) * 100) : 0;
+  const pct = potPct(p);
+  const next = MILESTONES.find(m => pct < m);
   let pace = '';
-  if (goal && p.targetDate && saved < goal) {
+  if (goal && saved >= goal) pace = '<p class="pot-done">🎉 Goal reached!</p>';
+  else if (goal && p.targetDate) {
     const months = Math.max(1, (fromISO(p.targetDate) - new Date()) / (864e5 * 30.44));
-    pace = `Save <b>${money((goal - saved) / months)}</b> a month to reach it by ${fmtDate(p.targetDate, { month: 'short', year: 'numeric' })}`;
-  } else if (goal && saved >= goal) pace = '<span class="status good">✓ Goal reached!</span>';
-  const last = (p.entries || []).slice(-3).reverse();
-  return `<section class="card pot">
-    <button class="pot-head" data-action="editPot" data-id="${p.id}">
-      <span class="pot-ic">${p.icon || '🐷'}</span>
-      <span><b>${esc(p.name)}</b><small>${goal ? `${money(saved)} of ${money(goal, { whole: true })}` : money(saved)}</small></span>
-    </button>
-    <div class="bar big"><i class="good" style="width:${pct}%"></i></div>
-    ${pace ? `<p class="small">${pace}</p>` : ''}
-    ${last.length ? `<div class="pot-entries">${last.map(e => `<div><span>${fmtDate(e.date)} ${esc(e.note || '')}</span><b class="${e.amount >= 0 ? 'pos' : ''}">${money(e.amount, { sign: true })}</b></div>`).join('')}</div>` : ''}
-    <div class="btn-row"><button class="btn sm primary" data-action="potIn" data-id="${p.id}">＋ Add money</button><button class="btn sm" data-action="potOut" data-id="${p.id}">− Take out</button></div>
+    pace = `<p class="small">Save <b>${money((goal - saved) / months)}</b> a month to reach it by ${fmtDate(p.targetDate, { month: 'short', year: 'numeric' })}</p>`;
+  } else if (goal && next) pace = `<p class="small">${money((goal * next) / 100 - saved)} to go until ${next}%</p>`;
+  return `<section class="card pot" style="--pot:${potColor(p)}">
+    <div class="pot-top">
+      <div class="pot-jar">${jar(p)}<span class="pot-emoji">${p.icon || '🐷'}</span></div>
+      <div class="pot-info">
+        <button class="pot-name" data-action="editPot" data-id="${p.id}"><b>${esc(p.name)}</b>${icon('pen', 13)}</button>
+        <div class="pot-amount">${money(saved)}</div>
+        <small class="muted">${goal ? `of ${money(goal, { whole: true })} · <b class="pot-pct">${Math.round(pct)}%</b>` : 'No goal yet — tap the name to add one'}</small>
+        ${goal ? `<div class="milestones">${MILESTONES.map(m => `<span class="ms ${pct >= m ? 'hit' : ''}" title="${m}%">${m === 100 ? '🏆' : m + '%'}</span>`).join('')}</div>` : ''}
+      </div>
+    </div>
+    ${pace}
+    <div class="quick-add">${[20, 50, 100].map(a => `<button class="btn sm quick" data-action="potQuick" data-id="${p.id}" data-amt="${a}">+${money(a, { whole: true })}</button>`).join('')}
+      <button class="btn sm" data-action="potIn" data-id="${p.id}">＋ Other</button>
+      <button class="btn sm ghost" data-action="potOut" data-id="${p.id}" title="Take money out">−</button></div>
   </section>`;
 }
 

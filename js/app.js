@@ -1,7 +1,7 @@
 // C.A.S.H — Control All Spending Habits. App shell: routing, events, startup.
 import * as S from './store.js';
 import { $, $$, shiftPeriod, todayISO, download, esc } from './util.js';
-import { view, resetPeriod, icon, toast, closeSheet, openSheet } from './ui.js';
+import { view, resetPeriod, icon, toast, closeSheet, openSheet, countUp } from './ui.js';
 import * as V from './views.js';
 import * as Sheets from './sheets.js';
 import * as Flows from './flows.js';
@@ -183,6 +183,7 @@ function render() {
   main.innerHTML = r === 'activity' ? V.activity() : r === 'plan' ? V.plan(sub || view.planTab)
     : r === 'savings' ? V.savings() : r === 'settings' ? V.settingsView() : V.home();
   window.scrollTo(0, scroll);
+  countUp(main);
   $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === r));
   document.title = r === 'home' ? 'C.A.S.H' : `${V.TITLES[r]} · C.A.S.H`;
 }
