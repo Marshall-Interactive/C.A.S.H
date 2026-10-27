@@ -172,6 +172,7 @@ const changes = {
     render();
   },
   filterType: el => { view.filters.type = el.value; $('#tx-list').innerHTML = V.txList(); },
+  filterScope: el => { view.filters.scope = el.value; $('#tx-list').innerHTML = V.txList(); },
   filterCat: el => { view.filters.categoryId = el.value; $('#tx-list').innerHTML = V.txList(); },
   filterMember: el => { view.filters.member = el.value; $('#tx-list').innerHTML = V.txList(); },
   restoreBackup: async el => {

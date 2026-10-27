@@ -525,6 +525,13 @@ button.tally-row:hover { background: var(--surface-2); }
 .in-summary small { display: block; color: var(--muted); font-size: 12px; }
 .in-summary b { font-size: 20px; color: var(--good-ink); font-variant-numeric: tabular-nums; }
 .tx.static { cursor: default; }
+.search-scope { margin-bottom: 10px; }
+.search-sum h2 { margin-bottom: 10px; }
+.sum-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 8px; }
+@media (min-width: 700px) { .sum-grid { grid-template-columns: repeat(4, 1fr); } }
+.sum-grid > div { background: var(--surface-2); border-radius: 12px; padding: 8px 10px; }
+.sum-grid small { display: block; color: var(--muted); font-size: 12px; }
+.sum-grid b { font-size: 17px; font-variant-numeric: tabular-nums; }
 /* ---- Year ---- */
 .year-switch { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .year-switch .icon-btn { font-size: 22px; line-height: 1; }
