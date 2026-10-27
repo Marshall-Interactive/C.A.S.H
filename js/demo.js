@@ -94,12 +94,12 @@ export function demoState(settings = {}) {
     stamp({ name: 'NAB Credit Card', kind: 'credit', limit: 10000, last4: '9034', history: cardHist, balance: cardHist[7].balance }),
   ];
   st.pots = [
-    stamp({ name: 'Emergency fund', icon: '🆘', goal: 5000, targetDate: toISO(new Date(today.getFullYear() + 1, 5, 1)),
+    stamp({ name: 'Emergency fund', icon: '🆘', slot: 3, goal: 5000, targetDate: toISO(new Date(today.getFullYear() + 1, 5, 1)),
       entries: [{ id: uid(), date: toISO(new Date(today.getFullYear(), today.getMonth() - 4, 1)), amount: 1850, note: 'Starting balance' },
         { id: uid(), date: toISO(new Date(today.getFullYear(), today.getMonth() - 1, 29)), amount: 200, note: '' }] }),
-    stamp({ name: 'Summer holiday', icon: '🏖️', goal: 2500, targetDate: toISO(new Date(today.getFullYear() + 1, 6, 1)),
+    stamp({ name: 'Summer holiday', icon: '🏖️', slot: 1, goal: 2500, targetDate: toISO(new Date(today.getFullYear() + 1, 6, 1)),
       entries: [{ id: uid(), date: toISO(new Date(today.getFullYear(), today.getMonth() - 2, 1)), amount: 640, note: 'Starting balance' }] }),
-    stamp({ name: 'Christmas', icon: '🎄', goal: 600, targetDate: `${today.getFullYear()}-12-01`,
+    stamp({ name: 'Christmas', icon: '🎄', slot: 8, goal: 600, targetDate: `${today.getFullYear()}-12-01`,
       entries: [{ id: uid(), date: toISO(new Date(today.getFullYear(), today.getMonth() - 3, 1)), amount: 320, note: 'Starting balance' }] }),
   ];
   return st;

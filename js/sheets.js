@@ -1,10 +1,10 @@
 // Add/edit forms shown in bottom sheets, plus what happens when they're saved.
 import * as S from './store.js';
 import { esc, money, todayISO, parseAmount, round2, currencySymbol, FREQS, sum, perMonth, periodOf, $, $$ } from './util.js';
-import { openSheet, closeSheet, sheetHead, toast, icon, view } from './ui.js';
+import { openSheet, closeSheet, sheetHead, toast, icon, view, confetti, buzz } from './ui.js';
 import { guessCategory, learn } from './categorise.js';
 import { expectedIn, incomeAmount } from './calc.js';
-import { potSaved } from './views.js';
+import { potSaved, potPct, MILESTONES } from './views.js';
 
 // ---------- small form builders ----------
 export function catOptions(type, selected, { blank = '' } = {}) {
@@ -347,16 +347,24 @@ function applyBudgetHelper(d) {
 }
 
 // ---------- Savings pots ----------
+const POT_SLOTS = [3, 1, 5, 4, 7, 2, 6, 8];
+const nextPotSlot = () => {
+  const used = new Set(S.list('pots').map(p => p.slot));
+  return POT_SLOTS.find(s => !used.has(s)) || POT_SLOTS[S.list('pots').length % POT_SLOTS.length];
+};
+
 export function potForm(p) {
   const isNew = !p;
-  p = p || { icon: '🐷' };
+  p = p || { icon: '🐷', slot: nextPotSlot() };
   openSheet(`${sheetHead(isNew ? 'New savings pot' : 'Edit pot')}
   <form class="form" data-form="pot">
     <input type="hidden" name="id" value="${p.id || ''}">
     <div class="row-icon"><label class="field"><span>Icon</span><input name="icon" value="${esc(p.icon)}" maxlength="4" class="emoji-input"></label>
       <label class="field grow"><span>Saving for</span><input name="name" value="${esc(p.name || '')}" required placeholder="e.g. Holiday 2027"></label></div>
+    <div class="field"><span>Jar colour</span><div class="swatches" role="radiogroup" aria-label="Jar colour">${POT_SLOTS.map(s =>
+      `<label><input type="radio" name="slot" value="${s}" ${s === (p.slot || 3) ? 'checked' : ''}><span style="background:var(--s${s})"></span></label>`).join('')}</div></div>
     <div class="row2">
-      <label class="field"><span>Goal</span><input name="goal" inputmode="decimal" value="${p.goal || ''}" placeholder="Optional"></label>
+      <label class="field"><span>Goal</span><input name="goal" inputmode="decimal" value="${p.goal || ''}" placeholder="e.g. 3000"></label>
       <label class="field"><span>By when</span><input name="targetDate" type="date" value="${p.targetDate || ''}"></label>
     </div>
     ${isNew ? `<label class="field"><span>Already saved</span><input name="start" inputmode="decimal" placeholder="0"></label>` : ''}
@@ -365,15 +373,15 @@ export function potForm(p) {
 }
 
 function savePot(d) {
-  const pot = { id: d.id || undefined, name: d.name.trim(), icon: d.icon.trim() || '🐷', goal: round2(parseAmount(d.goal)), targetDate: d.targetDate };
+  const pot = { id: d.id || undefined, name: d.name.trim(), icon: d.icon.trim() || '🐷', goal: round2(parseAmount(d.goal)), targetDate: d.targetDate, slot: +d.slot || 3 };
   if (!d.id) {
     pot.entries = [];
     const start = round2(parseAmount(d.start));
-    if (start) pot.entries.push({ id: S.uid(), date: todayISO(), amount: start, note: 'Starting balance' });
+    if (start) pot.entries.push({ id: S.uid(), date: todayISO(), amount: start, note: 'Starting balance', by: S.settings().currentMember, at: Date.now() });
   }
   S.upsert('pots', pot);
   closeSheet();
-  toast('Pot saved');
+  toast(d.id ? 'Pot saved' : `${pot.icon} ${pot.name} is ready — let's fill it!`);
 }
 
 export function potEntryForm(p, dir) {
@@ -389,23 +397,76 @@ export function potEntryForm(p, dir) {
   </form>`);
 }
 
-function savePotEntry(d) {
-  const p = S.byId('pots', d.id);
-  const amount = round2(parseAmount(d.amount));
-  if (!(amount > 0)) return toast('Enter an amount');
-  const isIn = d.dir === 'in';
-  const entry = { id: S.uid(), date: d.date, amount: isIn ? amount : -amount, note: d.note.trim() };
-  if (d.record === 'on') {
+// Put money in (or take it out) of a pot. Returns the entry so it can be undone.
+function addToPot(p, amount, { date = todayISO(), note = '', record = true } = {}) {
+  const entry = { id: S.uid(), date, amount, note, by: S.settings().currentMember, at: Date.now() };
+  if (record) {
+    const isIn = amount > 0;
     const tx = S.upsert('transactions', {
-      type: isIn ? 'out' : 'in', amount, date: d.date, desc: `${isIn ? 'To' : 'From'} ${p.name} pot`,
+      type: isIn ? 'out' : 'in', amount: Math.abs(amount), date, desc: `${isIn ? 'To' : 'From'} ${p.name} pot`,
       categoryId: isIn ? 'savings' : 'otherin', member: S.settings().currentMember, source: 'pot',
     }, { silent: true });
     entry.txId = tx.id;
   }
   p.entries = [...(p.entries || []), entry];
   S.upsert('pots', p);
+  return entry;
+}
+
+function undoPotEntry(potId, entryId) {
+  const p = S.byId('pots', potId);
+  const e = (p?.entries || []).find(x => x.id === entryId);
+  if (!e) return;
+  if (e.txId) S.remove('transactions', e.txId, { silent: true });
+  p.entries = p.entries.filter(x => x.id !== entryId);
+  S.upsert('pots', p);
+}
+
+// 🎉 The fun bit: confetti for every deposit, more for milestones, a party for a full pot.
+function cheer(p, before) {
+  const after = potPct(p);
+  const color = getComputedStyle(document.documentElement).getPropertyValue(`--s${p.slot || 3}`).trim() || '#1baf7a';
+  const crossed = MILESTONES.filter(m => before < m && after >= m);
+  if (crossed.includes(100)) {
+    confetti({ count: 220, colors: [color, '#f2b33d', '#ffd56e', '#ffffff'] });
+    buzz([60, 40, 60, 40, 120]);
+    setTimeout(() => openSheet(`<div class="goal-party">
+      <div class="party-emoji">${p.icon || '🐷'}</div>
+      <h2>You did it! 🎉</h2>
+      <p><b>${esc(p.name)}</b> is full — ${money(potSaved(p))} saved.</p>
+      <p class="muted small">Every dollar you two put aside got you here.</p>
+      <button class="btn primary big" data-action="closeSheet">Woohoo!</button></div>`), 450);
+    return;
+  }
+  if (crossed.length) {
+    confetti({ count: 140, colors: [color, '#f2b33d', '#ffffff'] });
+    buzz([40, 30, 80]);
+    return `🏁 ${crossed[crossed.length - 1]}% of the way to ${p.name}!`;
+  }
+  confetti({ count: 60, colors: [color, '#f2b33d'] });
+  buzz(30);
+  return null;
+}
+
+function savePotEntry(d) {
+  const p = S.byId('pots', d.id);
+  const amount = round2(parseAmount(d.amount));
+  if (!(amount > 0)) return toast('Enter an amount');
+  const isIn = d.dir === 'in';
+  const before = potPct(p);
+  addToPot(p, isIn ? amount : -amount, { date: d.date, note: d.note.trim(), record: d.record === 'on' });
   closeSheet();
-  toast(isIn ? `${money(amount)} added to ${p.name}` : `${money(amount)} taken from ${p.name}`);
+  const msg = isIn ? cheer(S.byId('pots', p.id), before) : null;
+  toast(msg || (isIn ? `💰 ${money(amount)} added to ${p.name}` : `${money(amount)} taken from ${p.name}`));
+}
+
+function quickAdd(el) {
+  const p = S.byId('pots', el.dataset.id);
+  const amount = +el.dataset.amt;
+  const before = potPct(p);
+  const entry = addToPot(p, amount);
+  const msg = cheer(S.byId('pots', p.id), before);
+  toast(msg || `💰 ${money(amount, { whole: true })} added to ${p.name}`, { label: 'Undo', fn: () => undoPotEntry(p.id, entry.id) });
 }
 
 // ---------- Accounts (offset + home loan, credit card, main…) ----------
@@ -581,6 +642,7 @@ export const actions = {
   deletePot: el => { if (confirm('Delete this pot and its history?')) { S.remove('pots', el.dataset.id); closeSheet(); } },
   potIn: el => potEntryForm(S.byId('pots', el.dataset.id), 'in'),
   potOut: el => potEntryForm(S.byId('pots', el.dataset.id), 'out'),
+  potQuick: el => quickAdd(el),
   newAccount: () => accountForm(),
   editAccount: el => accountForm(S.byId('accounts', el.dataset.id)),
   deleteAccount: el => { if (confirm('Delete this account and its balance history? Payments stay.')) { S.remove('accounts', el.dataset.id); closeSheet(); } },
