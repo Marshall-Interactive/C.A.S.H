@@ -181,12 +181,12 @@ function byArea(spent) {
   return loose.value > 0.004 ? [...rows, loose] : rows;
 }
 
-function moneyPie(spent, t, base) {
+function moneyPie(spent, t, base, txs) {
   const mode = view.pieMode || 'income';
   const areas = byArea(spent);
   const saved = sum(areas.filter(a => a.savings), a => a.value);
   const spending = sum(areas.filter(a => !a.savings), a => a.value);
-  let segs = [], center = '', sub = '', note = '', heading = '';
+  let segs = [], center = '', sub = '', note = '', heading = '', tally = '';
   if (mode === 'income') {
     const left = Math.max(0, base - spending - saved);
     segs = [
@@ -197,6 +197,7 @@ function moneyPie(spent, t, base) {
     center = money(base, { whole: true }); sub = 'coming in';
     if (base && spending + saved > base) note = `<p class="status bad small">⚠ Spending is ${money(spending + saved - base)} more than came in</p>`;
     if (!base) note = '<p class="small muted">Add your wages in Plan → Wages to see your income split.</p>';
+    tally = incomeTally(txs, t, base, spending, saved);
   } else if (mode === 'areas') {
     segs = areas.filter(a => a.value > 0.004).map(a => ({ id: a.id, label: a.name + (a.savings ? ' (saved)' : ''), value: a.value, color: a.color }));
     center = money(t.out, { whole: true }); sub = 'out';
@@ -228,7 +229,26 @@ function moneyPie(spent, t, base) {
         ${note}
       </div>
     </div>
+    ${tally}
   </section>`;
+}
+
+// Under the Income pie: wages in − spending − saved = left over.
+function incomeTally(txs, t, base, spending, saved) {
+  const real = txs.filter(x => x.type === 'in' && !S.isTransfer(x.categoryId));
+  const wages = sum(real.filter(x => x.categoryId === 'wages'), x => x.amount);
+  const other = t.in - wages;
+  const toCome = base - t.in;
+  const left = base - spending - saved;
+  const row = (label, value, cls = '', note = '') => `<div class="tally-row ${cls}"><span>${label}${note ? `<small>${note}</small>` : ''}</span><b>${value}</b></div>`;
+  return `<div class="tally">
+    ${row('💵 Wages in', money(wages), 'in')}
+    ${other > 0.004 ? row('➕ Other money in', money(other), 'in') : ''}
+    ${toCome > 0.004 ? row('⏳ Wages still to come', money(toCome), 'in muted', 'expected this month') : ''}
+    ${row('🛒 Spending', '−' + money(spending), 'out')}
+    ${saved > 0.004 ? row('🐷 Put into savings', '−' + money(saved), 'out') : ''}
+    ${row(left >= 0 ? '✅ Left over' : '⚠ Over by', money(Math.abs(left)), 'total ' + (left >= 0 ? 'pos' : 'neg'))}
+  </div>`;
 }
 
 // ---------- Home ----------
@@ -258,7 +278,7 @@ export function home() {
   </section>`;
 
   // Where the money goes: one pie, three ways of looking at it.
-  const pie = moneyPie(spent, t, base);
+  const pie = moneyPie(spent, t, base, txs);
 
   // Budget watch
   const budgetTotal = sum(outCats, c => c.budget);
