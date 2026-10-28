@@ -803,7 +803,17 @@ function potCard(p) {
   if (goal && saved >= goal) pace = '<p class="pot-done">🎉 Goal reached!</p>';
   else if (goal && p.targetDate) {
     const months = Math.max(1, (fromISO(p.targetDate) - new Date()) / (864e5 * 30.44));
-    pace = `<p class="small">Save <b>${money((goal - saved) / months)}</b> a month to reach it by ${fmtDate(p.targetDate, { month: 'short', year: 'numeric' })}</p>`;
+    const by = fmtDate(p.targetDate, { month: 'short', year: 'numeric' });
+    pace = `<p class="small">Save <b>${money((goal - saved) / months)}</b> a month to reach it by ${by}</p>`;
+    // A linked goal only fills once the ones above it are full, so it really needs all of theirs too.
+    if (p.linkTo) {
+      const list = Off.linkedPots(p.linkTo), i = list.findIndex(x => x.id === p.id);
+      const ahead = list.slice(0, i).filter(x => potSaved(x) < (+x.goal || 0));
+      if (ahead.length) {
+        const all = sum(ahead, x => (+x.goal || 0) - potSaved(x)) + goal - saved;
+        pace += `<p class="small pace-all">Save <b>${money(all / months)}</b> a month to reach it by ${by} — including ${ahead.length === 1 ? 'the priority goal' : `${ahead.length} priority goals`} above it (${ahead.map(x => esc(x.name)).join(', ')})</p>`;
+      }
+    }
   } else if (goal && next) pace = `<p class="small">${money((goal * next) / 100 - saved)} to go until ${next}%</p>`;
   const cur = periodOf(currentPeriodKey());
   const shares = {};
