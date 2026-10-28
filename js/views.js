@@ -650,30 +650,63 @@ export const potPct = p => (+p.goal ? Math.max(0, (potSaved(p) / p.goal) * 100) 
 // Remember how full each jar was last time, so it rises from there (not from empty).
 const lastFill = {};
 
-// A jar that fills with gently moving "liquid" in the pot's colour.
+// A jar that fills with a pile of gold coins. New money drops in from the top;
+// a nearly full jar spills a coin, and a full one pops its lid and overflows.
+const seeded = id => { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) | 0; return () => ((h = (h * 1103515245 + 12345) | 0) >>> 0) / 4294967296; };
+
 function jar(p) {
   const pct = Math.min(100, potPct(p));
-  const from = lastFill[p.id] ?? 0;
+  const from = Math.min(lastFill[p.id] ?? 0, pct);
   lastFill[p.id] = pct;
-  const top = 26, bottom = 112, h = bottom - top;
-  const y = bottom - (h * pct) / 100;
-  const rise = ((pct - from) / 100) * h;
-  const wave = `M0 ${y} q12.5 -5 25 0 t25 0 t25 0 t25 0 t25 0 t25 0 t25 0 t25 0 V120 H0 Z`;
-  const id = 'jar' + p.id;
-  return `<svg class="jar" viewBox="0 0 100 120" role="img" aria-label="${Math.round(pct)}% full">
-    <defs><clipPath id="${id}"><rect x="14" y="24" width="72" height="90" rx="18"/></clipPath></defs>
-    <rect x="30" y="6" width="40" height="12" rx="4" class="jar-lid"/>
-    <rect x="24" y="16" width="52" height="10" rx="4" class="jar-neck"/>
+  const rnd = seeded(p.id);
+  const top = 28, bottom = 110, h = bottom - top, rowH = 6.4;
+  const level = bottom - (h * pct) / 100, was = bottom - (h * from) / 100;
+  const id = 'jar' + p.id, coin = 'coin' + p.id;
+  const coins = [];
+  let order = 0;
+  // rows from the bottom up; the top row thins out into a little mound
+  for (let y = bottom - 3, row = 0; y >= level - 2 && pct > 0; y -= rowH, row++) {
+    const topRow = y - rowH < level - 2;
+    const n = topRow ? Math.max(1, Math.round(2 + rnd() * 3)) : 5;
+    for (let i = 0; i < n; i++) {
+      const span = topRow ? 34 : 56;
+      const x = 50 - span / 2 + (span / (n - 1 || 1)) * i + (row % 2 ? 5 : -5) * (topRow ? 0 : 1) + (rnd() - 0.5) * 4;
+      if (n === 1 && topRow) coins.push({ x: 50 + (rnd() - 0.5) * 10, y, r: (rnd() - 0.5) * 30, isNew: y < was - 1, k: order++ });
+      else coins.push({ x: Math.min(78, Math.max(22, x)), y: y + (rnd() - 0.5) * 1.5, r: (rnd() - 0.5) * 24, isNew: y < was - 1, k: order++ });
+    }
+  }
+  // only a jar that grew drops coins; a small top-up that doesn't start a new row still drops the top ones
+  const grew = pct > from + 0.01;
+  if (!grew) coins.forEach(c => { c.isNew = false; });
+  else if (!coins.some(c => c.isNew)) { const topY = Math.min(...coins.map(c => c.y)); coins.forEach(c => { if (c.y <= topY + rowH) c.isNew = true; }); }
+  const newCount = coins.filter(c => c.isNew).length;
+  const firstNew = coins.findIndex(c => c.isNew);
+  const drawCoin = (c, extra = '') => {
+    const delay = c.isNew ? Math.min(1.4, ((c.k - firstNew) / Math.max(1, newCount)) * 1.1 + rnd() * 0.12) : 0;
+    return `<g transform="translate(${c.x.toFixed(1)} ${c.y.toFixed(1)}) rotate(${c.r.toFixed(0)})"><g class="${c.isNew ? 'drop' : ''}${extra}" ${c.isNew ? `style="--dy:${(-(c.y - 0) - 10).toFixed(0)}px;animation-delay:${delay.toFixed(2)}s"` : ''}><use href="#${coin}"/></g></g>`;
+  };
+  const full = pct >= 100;
+  // overflow above the rim, and coins that tumbled out around the base
+  const heap = full ? [[36, 24], [50, 23], [64, 24], [43, 18], [57, 18], [50, 13]].map(([x, y], i) => ({ x, y, r: (rnd() - 0.5) * 30, isNew: from < 100, k: order + i })) : [];
+  const spillAt = [[7, 113, -20], [94, 114, 15], [15, 117, 5], [86, 118, -10], [3, 118, 30]];
+  const spills = full ? spillAt : pct >= 75 ? spillAt.slice(1, 2) : [];
+  const fresh = (full && from < 100) || (pct >= 75 && from < 75);
+  return `<svg class="jar ${full ? 'is-full' : ''}" viewBox="0 0 100 124" role="img" aria-label="${Math.round(pct)}% full">
+    <defs>
+      <clipPath id="${id}"><rect x="14" y="24" width="72" height="90" rx="18"/></clipPath>
+      <g id="${coin}"><ellipse cx="0" cy="1.6" rx="7" ry="3.3" class="coin-edge"/><ellipse cx="0" cy="0" rx="7" ry="3.3" class="coin-face"/><ellipse cx="0" cy="0" rx="4.4" ry="1.9" class="coin-ring"/><ellipse cx="-2.6" cy="-1" rx="1.6" ry=".6" class="coin-shine"/></g>
+    </defs>
     <g clip-path="url(#${id})">
-      <rect x="0" y="0" width="100" height="120" class="jar-glass"/>
-      <g class="jar-fill" style="--rise:${rise.toFixed(1)}px">
-        ${pct > 0 ? `<path d="${wave}" fill="${potColor(p)}" opacity=".35" class="jar-wave slow"/>
-        <path d="${wave}" fill="${potColor(p)}" class="jar-wave" transform="translate(0 3)"/>
-        ${pct >= 30 ? `<circle cx="34" cy="${bottom - 8}" r="5" class="jar-coin"/><circle cx="48" cy="${bottom - 5}" r="5" class="jar-coin"/><circle cx="62" cy="${bottom - 9}" r="5" class="jar-coin"/>` : ''}` : ''}
-      </g>
+      <rect x="0" y="0" width="100" height="124" class="jar-glass"/>
+      ${coins.map(c => drawCoin(c)).join('')}
     </g>
     <rect x="14" y="24" width="72" height="90" rx="18" class="jar-outline"/>
-    <rect x="22" y="34" width="6" height="56" rx="3" class="jar-shine"/>
+    <rect x="21" y="34" width="5" height="50" rx="2.5" class="jar-shine"/>
+    ${full ? '' : `<rect x="24" y="16" width="52" height="10" rx="4" class="jar-neck"/>`}
+    ${heap.map(c => drawCoin(c)).join('')}
+    <g class="${full ? 'lid-off' : ''}"><rect x="30" y="6" width="40" height="12" rx="4" class="jar-lid"/></g>
+    ${spills.map(([x, y, r], i) => `<g transform="translate(${x} ${y}) rotate(${r})"><g class="${fresh ? 'spill' : ''}" style="--sx:${(50 - x).toFixed(0)}px;animation-delay:${(1 + i * 0.15).toFixed(2)}s"><use href="#${coin}"/></g></g>`).join('')}
+    ${full ? '<g class="sparkles"><path d="M10 40l2 4 4 2-4 2-2 4-2-4-4-2 4-2z"/><path d="M90 30l1.5 3 3 1.5-3 1.5-1.5 3-1.5-3-3-1.5 3-1.5z"/><path d="M84 70l1.2 2.4 2.4 1.2-2.4 1.2-1.2 2.4-1.2-2.4-2.4-1.2 2.4-1.2z"/></g>' : ''}
   </svg>`;
 }
 
