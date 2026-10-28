@@ -765,12 +765,18 @@ label.imp-row { cursor: pointer; }
 .jar-lid { fill: color-mix(in srgb, var(--pot) 70%, #000); }
 .jar-neck { fill: color-mix(in srgb, var(--pot) 18%, var(--surface)); stroke: color-mix(in srgb, var(--pot) 45%, var(--line-2)); stroke-width: 2; }
 .jar-shine { fill: #fff; opacity: .35; }
-.jar-coin { fill: #f2b33d; stroke: #c98500; stroke-width: 1.2; }
-.jar-fill { animation: jar-rise 1.4s cubic-bezier(.2,.8,.2,1); }
-@keyframes jar-rise { from { transform: translateY(var(--rise)); } }
-.jar-wave { animation: jar-wave 3.2s linear infinite; }
-.jar-wave.slow { animation-duration: 5s; animation-direction: reverse; }
-@keyframes jar-wave { to { transform: translateX(-50px); } }
+.jar { height: 114px; }
+.coin-face { fill: #f2b33d; } .coin-edge { fill: #b07800; } .coin-ring { fill: none; stroke: #ffd56e; stroke-width: .8; } .coin-shine { fill: #fff6d8; opacity: .9; }
+.jar .drop { animation: coin-fall .7s cubic-bezier(.45,.05,.55,.95) backwards; }
+@keyframes coin-fall { 0% { transform: translateY(var(--dy)); opacity: 0; } 15% { opacity: 1; } 75% { transform: translateY(1.5px); } 88% { transform: translateY(-1.5px); } 100% { transform: none; } }
+.jar .spill { animation: coin-spill .8s cubic-bezier(.3,.6,.4,1) backwards; }
+@keyframes coin-spill { 0% { transform: translate(var(--sx), -100px) rotate(-200deg); opacity: 0; } 20% { opacity: 1; } 80% { transform: translate(0, 1px) rotate(10deg); } 100% { transform: none; } }
+.jar .lid-off { transform-box: fill-box; transform-origin: center; transform: translate(26px, -4px) rotate(28deg); transition: transform .5s; }
+.jar.is-full .lid-off { animation: lid-pop .7s cubic-bezier(.3,1.6,.5,1) backwards; }
+@keyframes lid-pop { from { transform: none; } }
+.jar .sparkles path { fill: #ffd56e; animation: twinkle 1.6s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+.jar .sparkles path:nth-child(2) { animation-delay: .5s; } .jar .sparkles path:nth-child(3) { animation-delay: 1s; }
+@keyframes twinkle { from { opacity: .2; transform: scale(.6); } to { opacity: 1; transform: scale(1.1); } }
 .pot-info { min-width: 0; flex: 1; display: grid; gap: 2px; }
 .pot-name { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; text-align: left; color: var(--ink); font-size: 16px; }
 .pot-name .ic { color: var(--muted); }
@@ -794,4 +800,4 @@ label.imp-row { cursor: pointer; }
 .goal-party p { margin: 0; }
 .party-emoji { font-size: 72px; animation: party-bounce .9s ease-in-out infinite alternate; }
 @keyframes party-bounce { from { transform: translateY(0) rotate(-6deg); } to { transform: translateY(-12px) rotate(6deg); } }
-@media (prefers-reduced-motion: reduce) { .jar-fill, .jar-wave, .ring-fill, .party-emoji { animation: none !important; } .ring-fill { stroke-dashoffset: var(--to); } }
+@media (prefers-reduced-motion: reduce) { .jar .drop, .jar .spill, .jar .lid-off, .jar .sparkles path, .ring-fill, .party-emoji { animation: none !important; } .ring-fill { stroke-dashoffset: var(--to); } }
