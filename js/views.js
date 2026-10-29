@@ -431,17 +431,16 @@ export function home() {
 
   // Hero
   const hero = `<section class="card hero span2">
-    <div class="hero-top"><span class="label">${look.now >= 0 ? (look.live ? 'Not spent so far' : 'Left over') : 'Spent more than came in'}</span><span class="label">${esc(p.range)}</span></div>
-    <div class="big">${money(Math.abs(look.now))}</div>
-    <div class="sub">${t.in ? `Money in so far minus money out · you've spent ${Math.round((t.out / t.in) * 100)}% of it` : t.out ? 'Nothing has come in yet this month' : 'Import a statement or add your wages to get started'}</div>
+    <div class="hero-top"><span class="label">This month</span><span class="label">${esc(p.range)}</span></div>
+    <div class="hero-stats big-stats">
+      <button class="hero-stat" data-action="moneyIn"><small>↓ Money in ›</small><b>${money(t.in)}</b><small>${expIn ? 'of ' + money(expIn) + ' expected' : 'this month'}</small></button>
+      <div class="hero-stat"><small>↑ Money out</small><b>${money(t.out)}</b><small>${t.count} payments</small></div>
+    </div>
+    <div class="hero-left ${look.now >= 0 ? '' : 'neg'}"><span>${look.now >= 0 ? (look.live ? 'Not spent so far' : 'Left over') : 'Spent more than came in'}<small>${t.in ? `you've spent ${Math.round((t.out / t.in) * 100)}% of what came in` : t.out ? 'nothing has come in yet' : 'import a statement or add your wages'}</small></span><b>${money(Math.abs(look.now))}</b></div>
     <div class="meter" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
     ${look.live && (look.toCome || look.billsLeft || look.usualLeft) ? `<div class="hero-outlook ${look.end >= 0 ? '' : 'neg'}">📅 By month end, roughly <b>${money(Math.abs(look.end), { whole: true })} ${look.end >= 0 ? 'left' : 'short'}</b><small>after ${[look.toCome > 0.004 ? `+${money(look.toCome, { whole: true })} wages to come` : '', look.billsLeft > 0.004 ? `−${money(look.billsLeft, { whole: true })} bills` : '', look.usualLeft > 0.004 ? `−${money(look.usualLeft, { whole: true })} usual spending` : ''].filter(Boolean).join(' · ')}</small></div>` : ''}
     ${extraPaydays(p).length ? `<p class="hero-note">📅 3 paydays this month: one more than usual, so more is coming in than in a normal month. Don't count on it every month.</p>` : ''}
     ${pace}
-    <div class="hero-stats">
-      <button class="hero-stat" data-action="moneyIn"><small>↓ Money in ›</small><b>${money(t.in)}</b><small>${expIn ? 'of ' + money(expIn) + ' expected' : 'this month'}</small></button>
-      <div class="hero-stat"><small>↑ Money out</small><b>${money(t.out)}</b><small>${t.count} payments</small></div>
-    </div>
   </section>`;
 
   // Where the money goes: one pie, three ways of looking at it.
