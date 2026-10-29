@@ -5,7 +5,7 @@ import { txInPeriod, spendLines, spentByCategory, totals, billsInPeriod, incomes
 import { donut, inOutBars, growthChart } from './charts.js';
 import { icon, view, sheetHead } from './ui.js';
 import * as Sync from './sync.js';
-import { yearTab, yearCard } from './year.js';
+import { yearTab, yearCard, monthStats } from './year.js';
 import { streakCard, sweepCard } from './motivate.js';
 import { remindersOn, canNotify } from './reminders.js';
 import { cardLines, cardSheetHtml } from './card.js';
@@ -563,15 +563,32 @@ function budgetTab() {
   const budgeted = sum(cats, c => c.budget);
   const left = expIn - budgeted;
   const billsMonthly = sum(S.list('bills').filter(b => b.active !== false), b => perMonth(b.amount, b.frequency));
+  // What really happens: money you don't spend stays in the offset, and real spending is often more than the budgets.
+  const offsetAcc = S.list('accounts').find(a => a.kind === 'offset');
+  const recent = [1, 2, 3].map(k => monthStats(shiftPeriod(currentPeriodKey(), -k))).filter(m => m.in || m.out);
+  const avgOut = recent.length ? sum(recent, m => m.out) / recent.length : 0;
+  const avgIn = recent.length ? sum(recent, m => m.in) / recent.length : 0;
+  const pays = incomesInPeriod(p).filter(r => ['fortnightly', 'weekly'].includes(r.item.frequency));
+  const byIncome = {};
+  for (const r of pays) byIncome[r.item.id] = (byIncome[r.item.id] || 0) + 1;
+  const extraPay = Object.entries(byIncome).filter(([id, n]) => n > (S.byId('incomes', id).frequency === 'weekly' ? 4 : 2)).map(([id]) => S.byId('incomes', id).name);
+  const reality = recent.length ? `<div class="plan-reality">
+      <p><b>What really happens:</b> over the last ${recent.length} month${recent.length === 1 ? '' : 's'} you spent about <b>${money(avgOut, { whole: true })}</b> a month against <b>${money(avgIn, { whole: true })}</b> coming in${avgOut > budgeted + 1 ? ` — ${money(avgOut - budgeted, { whole: true })} more than your budgets add up to` : ''}.</p>
+      <p>${avgIn - avgOut >= 0 ? `So roughly <b class="pos">${money(avgIn - avgOut, { whole: true })} a month</b> actually ${offsetAcc ? `stays in your ${esc(offsetAcc.name)}` : 'is left over'}.` : `So you've been <b class="neg">${money(avgOut - avgIn, { whole: true })} a month short</b>${offsetAcc ? ` — dipping into the ${esc(offsetAcc.name)}` : ''}.`}
+      ${avgOut > budgeted + 1 ? ' Raising the budgets to match real spending (✨ Budget helper, or tap a category) makes the plan honest.' : ''}</p>
+    </div>` : '';
   let html = `<div class="grid cols"><section class="card span2">
     <h2>Your monthly plan</h2>
     <div class="stat-row">
       <div class="stat"><small>Expected income</small><b>${money(expIn, { whole: true })}</b></div>
       <div class="stat"><small>Budgeted</small><b>${money(budgeted, { whole: true })}</b></div>
-      <div class="stat"><small>${left >= 0 ? 'Not yet given a job' : 'Over-planned by'}</small><b class="${left >= 0 ? 'pos' : 'neg'}">${money(Math.abs(left), { whole: true })}</b></div>
+      <div class="stat"><small>${left < 0 ? 'Over-planned by' : offsetAcc ? `Not budgeted — stays in ${esc(offsetAcc.name)}` : 'Not yet given a job'}</small><b class="${left >= 0 ? 'pos' : 'neg'}">${money(Math.abs(left), { whole: true })}</b></div>
       <div class="stat"><small>Bills (monthly)</small><b>${money(billsMonthly, { whole: true })}</b></div>
     </div>
     ${!expIn ? `<p class="notice">Add your wages in the <a href="#plan/wages">Wages</a> tab so C.A.S.H can check your budget adds up.</p>` : ''}
+    ${extraPay.length ? `<p class="notice small">📅 ${esc(p.label)} has an extra payday (${extraPay.map(esc).join(', ')}) — paid fortnightly, a couple of months a year get 3 pays, so income looks higher than usual this month.</p>` : ''}
+    ${left > 0 && offsetAcc ? `<p class="small muted">Anything not budgeted isn't lost — it simply stays in your ${esc(offsetAcc.name)}, which is your savings.</p>` : ''}
+    ${reality}
     <div class="btn-row"><button class="btn" data-action="budgetHelper">✨ Budget helper (50/30/20)</button><button class="btn" data-action="newCategory">${icon('plus', 18)} Category</button></div>
   </section></div>`;
   const gs = S.groups();
