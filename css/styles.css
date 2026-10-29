@@ -715,6 +715,11 @@ label.imp-row { cursor: pointer; }
 .tally-row.total span { color: var(--ink); font-weight: 700; }
 .tally-row.total.pos b { color: var(--good-ink); }
 .tally-row.total.neg b { color: var(--bad-ink); }
+.tally-head { margin: 10px 4px 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.tally-head:first-child { margin-top: 0; }
+.hero-outlook { margin-top: 10px; padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,.14); font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
+.hero-outlook small { opacity: .85; font-size: 12px; }
+.hero-note { margin: 8px 0 0; font-size: 13px; opacity: .9; }
 .chip-static { display: inline-flex; gap: 6px; padding: 6px 10px; border-radius: 999px; background: var(--surface-2); font-size: 13px; font-weight: 600; }
 .helper-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
 .add-row { margin: 8px 0 10px; }

@@ -188,25 +188,52 @@ function byArea(spent) {
   return loose.value > 0.004 ? [...rows, loose] : rows;
 }
 
+// The month in two parts: what has really happened so far (money in − out),
+// and, for the current month, a rough month-end figure — wages still to land,
+// minus bills still due, minus the rest of what you usually spend in a month.
+function monthOutlook(p, t, expIn) {
+  const now = t.in - t.out;
+  const live = p.end > new Date() && p.start <= new Date();
+  if (!live) return { now, live, toCome: 0, billsLeft: 0, usualLeft: 0, end: now, avgOut: 0 };
+  const today = todayISO();
+  const toCome = Math.max(0, expIn - t.in);
+  const billsLeft = sum(billsInPeriod(p).filter(b => !b.done && b.date >= today), b => +b.item.amount || 0);
+  const past = [1, 2, 3].map(k => monthStats(shiftPeriod(p.key, -k))).filter(m => m.out > 0);
+  const avgOut = past.length ? sum(past, m => m.out) / past.length : 0;
+  // usual spending still to come, on top of the bills (never below zero)
+  const usualLeft = Math.max(0, avgOut - t.out - billsLeft);
+  return { now, live, toCome, billsLeft, usualLeft, avgOut, months: past.length, end: now + toCome - billsLeft - usualLeft };
+}
+const offsetName = () => S.list('accounts').find(a => a.kind === 'offset')?.name;
+// Fortnightly (or weekly) wages that land one more time than usual this month.
+function extraPaydays(p) {
+  const n = {};
+  for (const r of incomesInPeriod(p)) if (['fortnightly', 'weekly'].includes(r.item.frequency)) n[r.item.id] = (n[r.item.id] || 0) + 1;
+  return Object.entries(n).filter(([id, k]) => k > (S.byId('incomes', id).frequency === 'weekly' ? 4 : 2)).map(([id]) => S.byId('incomes', id).name);
+}
+
 let lastPie = '';
 export const replayPie = () => { lastPie = ''; };
-function moneyPie(spent, t, base, txs) {
+function moneyPie(spent, t, base, txs, look) {
   const mode = view.pieMode || 'income';
   const areas = byArea(spent);
   const saved = sum(areas.filter(a => a.savings), a => a.value);
   const spending = sum(areas.filter(a => !a.savings), a => a.value);
   let segs = [], center = '', sub = '', note = '', heading = '', tally = '';
   if (mode === 'income') {
-    const left = Math.max(0, base - spending - saved);
+    // still to spend this month (bills due + usual spending), then what's likely left
+    const toSpend = look.billsLeft + look.usualLeft;
+    const left = Math.max(0, base - spending - saved - toSpend);
     segs = [
       { label: 'Spent', value: spending, color: 'var(--s2)', open: opens('spend') },
       { label: 'Saved', value: saved, color: 'var(--s3)', open: opens('saved') },
-      { label: 'Left over', value: left, color: 'var(--s1)', open: 'data-action="moneyIn"' },
+      { label: 'Still to spend (est.)', value: Math.min(toSpend, Math.max(0, base - spending - saved)), color: 'var(--line-2)' },
+      { label: look.live ? 'Likely left over' : 'Left over', value: left, color: 'var(--s1)', open: 'data-action="moneyIn"' },
     ].filter(s => s.value > 0.004);
     center = money(base, { whole: true }); sub = 'coming in';
     if (base && spending + saved > base) note = `<p class="status bad small">⚠ Spending is ${money(spending + saved - base)} more than came in</p>`;
     if (!base) note = '<p class="small muted">Add your wages in Plan → Wages to see your income split.</p>';
-    tally = incomeTally(txs, t, base, spending, saved);
+    tally = incomeTally(txs, t, look, spending, saved);
   } else if (mode === 'areas') {
     segs = areas.filter(a => a.value > 0.004).map(a => ({ id: a.id, label: a.name + (a.savings ? ' (saved)' : ''), value: a.value, color: a.color, open: opens('area', a.id) }));
     center = money(t.out, { whole: true }); sub = 'out';
@@ -260,24 +287,32 @@ function moneyPie(spent, t, base, txs) {
 // What a pie slice opens: the payments behind it.
 const opens = (kind, id = '') => `data-action="spendList" data-kind="${kind}" data-id="${esc(id)}"`;
 
-// Under the Income pie: wages in − spending − saved = left over.
-function incomeTally(txs, t, base, spending, saved) {
+// Under the Income pie: what really happened so far, then (this month) the rest-of-month estimate.
+function incomeTally(txs, t, look, spending, saved) {
   const real = txs.filter(x => x.type === 'in' && !S.isTransfer(x.categoryId));
   const wages = sum(real.filter(x => x.categoryId === 'wages'), x => x.amount);
   const other = t.in - wages;
-  const toCome = base - t.in;
-  const left = base - spending - saved;
+  const off = offsetName();
+  const stays = off ? `stays in ${esc(off)}` : 'stays in your accounts';
   const row = (label, value, cls = '', note = '') => {
     const inner = `<span>${label}${note ? `<small>${note}</small>` : ''}</span><b>${value}</b>`;
     return cls.startsWith('in') ? `<button class="tally-row ${cls}" data-action="moneyIn">${inner}<i class="chev">›</i></button>` : `<div class="tally-row ${cls}">${inner}</div>`;
   };
+  const now = look.now;
+  const rest = look.live && (look.toCome > 0.004 || look.billsLeft > 0.004 || look.usualLeft > 0.004);
+  const usualNote = look.months ? `you usually spend about ${money(look.avgOut, { whole: true })} a month` : 'import a few months to estimate this';
   return `<div class="tally">
+    <p class="tally-head">${look.live ? 'So far this month' : 'This month'}</p>
     ${row('💵 Wages in', money(wages), 'in')}
     ${other > 0.004 ? row('➕ Other money in', money(other), 'in') : ''}
-    ${toCome > 0.004 ? row('⏳ Wages still to come', money(toCome), 'in muted', 'expected this month') : ''}
     ${row('🛒 Spending', '−' + money(spending), 'out')}
     ${saved > 0.004 ? row('🐷 Put into savings', '−' + money(saved), 'out') : ''}
-    ${row(left >= 0 ? '✅ Left over' : '⚠ Over by', money(Math.abs(left)), 'total ' + (left >= 0 ? 'pos' : 'neg'))}
+    ${row(now >= 0 ? (look.live ? '✅ Not spent so far' : '✅ Left over') : '⚠ Spent more than came in', money(Math.abs(now)), 'total ' + (now >= 0 ? 'pos' : 'neg'), now >= 0 ? stays : 'came out of savings')}
+    ${rest ? `<p class="tally-head">Rest of the month (estimate)</p>
+    ${look.toCome > 0.004 ? row('⏳ Wages still to come', '+' + money(look.toCome), 'in muted', 'expected paydays') : ''}
+    ${look.billsLeft > 0.004 ? row('📄 Bills still to pay', '−' + money(look.billsLeft), 'out', 'due later this month') : ''}
+    ${row('🛒 Usual spending still to come', '−' + money(look.usualLeft), 'out', usualNote)}
+    ${row(look.end >= 0 ? '≈ Likely left at month end' : '⚠ Likely short at month end', money(Math.abs(look.end), { whole: true }), 'total ' + (look.end >= 0 ? 'pos' : 'neg'), look.end >= 0 ? stays : 'would come out of savings')}` : ''}
   </div>`;
 }
 
@@ -376,8 +411,8 @@ export function home() {
   // Until the month is over, count wages that are still due to land.
   const useExpected = expIn > t.in && p.end > new Date();
   const base = useExpected ? expIn : t.in;
-  const left = base - t.out;
-  const pct = base ? Math.min(100, (t.out / base) * 100) : 0;
+  const look = monthOutlook(p, t, expIn);
+  const pct = t.in ? Math.min(100, (t.out / t.in) * 100) : t.out ? 100 : 0;
   const spent = spentByCategory(txs);
   const outCats = S.list('categories').filter(c => (c.type || 'out') === 'out');
 
@@ -396,10 +431,12 @@ export function home() {
 
   // Hero
   const hero = `<section class="card hero span2">
-    <div class="hero-top"><span class="label">${left >= 0 ? 'Left this month' : 'Overspent this month'}</span><span class="label">${esc(p.range)}</span></div>
-    <div class="big">${money(left)}</div>
-    <div class="sub">${useExpected ? `Counting ${money(expIn - t.in, { whole: true })} of wages still to come` : base ? `You've spent ${Math.round(pct)}% of what came in` : 'Add your wages to see what is left'}</div>
+    <div class="hero-top"><span class="label">${look.now >= 0 ? (look.live ? 'Not spent so far' : 'Left over') : 'Spent more than came in'}</span><span class="label">${esc(p.range)}</span></div>
+    <div class="big">${money(Math.abs(look.now))}</div>
+    <div class="sub">${t.in ? `Money in so far minus money out · you've spent ${Math.round((t.out / t.in) * 100)}% of it` : t.out ? 'Nothing has come in yet this month' : 'Import a statement or add your wages to get started'}</div>
     <div class="meter" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
+    ${look.live && (look.toCome || look.billsLeft || look.usualLeft) ? `<div class="hero-outlook ${look.end >= 0 ? '' : 'neg'}">📅 By month end, roughly <b>${money(Math.abs(look.end), { whole: true })} ${look.end >= 0 ? 'left' : 'short'}</b><small>after ${[look.toCome > 0.004 ? `+${money(look.toCome, { whole: true })} wages to come` : '', look.billsLeft > 0.004 ? `−${money(look.billsLeft, { whole: true })} bills` : '', look.usualLeft > 0.004 ? `−${money(look.usualLeft, { whole: true })} usual spending` : ''].filter(Boolean).join(' · ')}</small></div>` : ''}
+    ${extraPaydays(p).length ? `<p class="hero-note">📅 3 paydays this month: one more than usual, so more is coming in than in a normal month. Don't count on it every month.</p>` : ''}
     ${pace}
     <div class="hero-stats">
       <button class="hero-stat" data-action="moneyIn"><small>↓ Money in ›</small><b>${money(t.in)}</b><small>${expIn ? 'of ' + money(expIn) + ' expected' : 'this month'}</small></button>
@@ -408,7 +445,7 @@ export function home() {
   </section>`;
 
   // Where the money goes: one pie, three ways of looking at it.
-  const pie = moneyPie(spent, t, base, txs);
+  const pie = moneyPie(spent, t, base, txs, look);
 
   // Budget watch
   const budgetTotal = sum(outCats, c => c.budget);
