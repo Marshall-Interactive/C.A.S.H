@@ -449,7 +449,7 @@ function review(rows, source, { editable = false, accountId = '', balance = null
   const last4s = S.list('accounts').flatMap(a => [a.last4, a.loanLast4]).filter(Boolean);
   const used = new Set();
   pending = rows.map(r => {
-    const dup = findDuplicate(r, pool, used);
+    const dup = findDuplicate({ ...r, accountId: accId || undefined, accountPart: part === 'loan' ? 'loan' : undefined }, pool, used);
     if (dup) used.add(dup.id);
     const bill = matchBill(r), inc = matchIncome(r);
     let guess = guessCategory(r.desc, r.type);

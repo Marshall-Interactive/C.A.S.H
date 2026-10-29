@@ -126,7 +126,9 @@ const FROM_BANK = new Set(['csv', 'pdf']);
 // `used` stops one entry soaking up two identical rows (two $4.50 coffees).
 export function findDuplicate(c, pool = S.list('transactions'), used = new Set()) {
   const t = fromISO(c.date);
-  const near = x => !used.has(x.id) && x.type === c.type && Math.abs(x.amount - c.amount) < 0.005 &&
+  // rows from two different accounts (or the offset vs its home loan) are never the same payment
+  const otherAccount = x => c.accountId && x.accountId && (x.accountId !== c.accountId || (x.accountPart || '') !== (c.accountPart || ''));
+  const near = x => !used.has(x.id) && !otherAccount(x) && x.type === c.type && Math.abs(x.amount - c.amount) < 0.005 &&
     Math.abs(fromISO(x.date) - t) <= 3 * 864e5;
   const gap = x => Math.abs(fromISO(x.date) - t);
   const mine = pool.filter(x => near(x) && !FROM_BANK.has(x.source) && !x.bankMatched).sort((a, b) => gap(a) - gap(b))[0];
