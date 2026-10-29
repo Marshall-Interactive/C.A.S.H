@@ -447,6 +447,8 @@ function review(rows, source, { editable = false, accountId = '', balance = null
   // Transfers between your own accounts: the same amount going out of one and into another.
   const others = S.list('transactions').filter(t => t.accountId && t.accountId !== accId);
   const last4s = S.list('accounts').flatMap(a => [a.last4, a.loanLast4]).filter(Boolean);
+  const loan4s = S.list('accounts').map(a => a.loanLast4).filter(Boolean);
+  const hasNum = (desc, nums) => nums.some(n => desc.replace(/\D/g, ' ').split(' ').some(x => x.length >= 4 && x.endsWith(n)));
   const used = new Set();
   pending = rows.map(r => {
     const dup = findDuplicate({ ...r, accountId: accId || undefined, accountPart: part === 'loan' ? 'loan' : undefined }, pool, used);
@@ -458,9 +460,14 @@ function review(rows, source, { editable = false, accountId = '', balance = null
     // a home-loan statement is only repayments and interest — keep its balance, don't count it as spending
     if (part === 'loan') guess = 'transfer';
     if (last4s.some(n => r.desc.replace(/\D/g, ' ').split(' ').some(x => x.length >= 4 && x.endsWith(n)))) guess = 'transfer';
-    const twin = others.find(t => t.type !== r.type && Math.abs(t.amount - r.amount) < 0.005 && Math.abs(fromISO(t.date) - fromISO(r.date)) <= 2 * 864e5);
-    if (twin) guess = 'transfer';
-    const categoryId = bill?.categoryId || (inc && guess === 'otherin' ? 'wages' : guess);
+    let twin = others.find(t => t.type !== r.type && Math.abs(t.amount - r.amount) < 0.005 && Math.abs(fromISO(t.date) - fromISO(r.date)) <= 2 * 864e5);
+    // Paying the home loan from an everyday account is the mortgage bill, not a transfer:
+    // it counts as spending on this side, and the loan statement's copy stays a transfer.
+    const loanPay = part !== 'loan' && r.type === 'out' && (hasNum(r.desc, loan4s) || twin?.accountPart === 'loan');
+    if (loanPay) twin = null;
+    else if (twin) guess = 'transfer';
+    const mortgage = S.byId('categories', 'housing') ? 'housing' : 'other';
+    const categoryId = loanPay ? (bill?.categoryId || mortgage) : bill?.categoryId || (inc && guess === 'otherin' ? 'wages' : guess);
     return { ...r, dup: !!dup, dupOf: dup?.id, billId: twin ? undefined : bill?.id, incomeId: twin ? undefined : inc?.id, categoryId: twin || part === 'loan' ? 'transfer' : categoryId, guessed: twin || part === 'loan' ? 'transfer' : categoryId, twinId: twin?.id };
   }).sort((a, b) => b.date.localeCompare(a.date));
   const dups = pending.filter(p => p.dup).length;
@@ -532,7 +539,7 @@ function submitReview(d, f) {
     if (!(tx.amount > 0)) continue;
     if (tx.categoryId !== p.guessed) learn(tx.desc, tx.categoryId);
     const saved = S.upsert('transactions', tx, { silent: true });
-    if (p.twinId && tx.categoryId === 'transfer') { const tw = S.byId('transactions', p.twinId); if (tw && tw.categoryId !== 'transfer') { tw.categoryId = 'transfer'; tw.billId = tw.incomeId = undefined; tw.updatedAt = Date.now(); } }
+    if (p.twinId && tx.categoryId === 'transfer' && pendingMeta.part !== 'loan') { const tw = S.byId('transactions', p.twinId); if (tw && tw.categoryId !== 'transfer') { tw.categoryId = 'transfer'; tw.billId = tw.incomeId = undefined; tw.updatedAt = Date.now(); } }
     added.push(saved);
     if (p.billId) linkOccurrence(S.byId('bills', p.billId), 'paid', saved);
     if (p.incomeId) { const inc = S.byId('incomes', p.incomeId); learnPayName(inc, saved); linkOccurrence(inc, 'received', saved); }
