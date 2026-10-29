@@ -2,7 +2,7 @@
 import * as S from './store.js';
 import { esc, money, todayISO, parseAmount, round2, currencySymbol, FREQS, sum, perMonth, periodOf, fmtDate, $, $$ } from './util.js';
 import { openSheet, closeSheet, sheetHead, toast, icon, view, confetti, buzz } from './ui.js';
-import { guessCategory, learn, hasText, similarText, addWordRule, removeRule, wordRules, learnedRules } from './categorise.js';
+import { guessCategory, learn, hasText, similarText, addWordRule, removeRule, wordRules, learnedRules, normalise } from './categorise.js';
 import { expectedIn, incomeAmount, relinkIncomes } from './calc.js';
 import { potSaved, potPct, MILESTONES } from './views.js';
 import { streakCats } from './motivate.js';
@@ -267,18 +267,51 @@ function saveBill(d) {
 const incomeCategory = i => { const g = guessCategory(i.name + ' ' + (i.keywords || ''), 'in'); return g === 'otherin' ? 'wages' : g; };
 
 // Ticking a bill as paid records the payment so it shows in spending.
+// Ticking a bill or wage you've already imported from the bank: find that
+// payment and link it, so it isn't counted twice. Due up to 20 days after or
+// 5 days before the payment, roughly the right amount, and the name or category lines up.
+function findPaid(coll, item, due) {
+  const isBill = coll === 'bills';
+  const linked = new Set([...S.list('bills').flatMap(b => Object.values(b.paid || {})), ...S.list('incomes').flatMap(i => Object.values(i.received || {}))]);
+  const words = new Set(normalise(`${item.name} ${item.keywords || ''}`).split(' ').filter(w => w.length >= 3));
+  const d = new Date(due);
+  return S.list('transactions').map(t => {
+    if (linked.has(t.id) || t.type !== (isBill ? 'out' : 'in') || S.isTransfer(t.categoryId)) return null;
+    const gap = (d - new Date(t.date)) / 864e5;
+    if (gap > 5 || gap < -20) return null;
+    const off = Math.abs(t.amount - item.amount) / (item.amount || 1);
+    if (off > (item.varies || item.keywords ? 0.5 : 0.25)) return null;
+    const named = normalise(t.desc).split(' ').some(w => words.has(w));
+    const sameCat = isBill && t.categoryId === item.categoryId;
+    if (!named && !sameCat) return null;
+    return { t, score: (named ? 0 : 10) + off * 5 + Math.abs(gap) / 10 };
+  }).filter(Boolean).sort((a, b) => a.score - b.score)[0]?.t || null;
+}
+
 function toggleScheduled(coll, key, id, date) {
   const item = S.byId(coll, id);
   const tid = item[key]?.[date];
   if (tid) {
     const t = S.byId('transactions', tid);
     if (t && (t.source === 'bill' || t.source === 'income')) S.remove('transactions', tid, { silent: true });
+    else if (t) { t.billId = t.incomeId = undefined; t.updatedAt = Date.now(); }
     delete item[key][date];
     S.upsert(coll, item);
     toast(coll === 'bills' ? 'Marked as not paid' : 'Marked as not received');
     return;
   }
   const isBill = coll === 'bills';
+  const paid = findPaid(coll, item, date);
+  if (paid) {
+    if (isBill) { paid.billId = item.id; paid.categoryId = item.categoryId; } else paid.incomeId = item.id;
+    paid.updatedAt = Date.now();
+    // remember the name it comes in under, so the next import ticks it by itself
+    if (!item.keywords) item.keywords = similarText(paid.desc);
+    item[key] = { ...(item[key] || {}), [date]: paid.id };
+    S.upsert(coll, item);
+    toast(`✓ Matched to ${paid.desc} ${money(paid.amount)} on ${fmtDate(paid.date, { day: 'numeric', month: 'short' })} — not counted twice`);
+    return;
+  }
   const tx = S.upsert('transactions', {
     type: isBill ? 'out' : 'in', amount: item.amount, desc: item.name, date: date > todayISO() ? todayISO() : date,
     categoryId: isBill ? item.categoryId : incomeCategory(item), member: isBill ? item.payer : item.member,
