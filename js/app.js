@@ -1,6 +1,6 @@
 // C.A.S.H — Control All Spending Habits. App shell: routing, events, startup.
 import * as S from './store.js';
-import { $, $$, shiftPeriod, todayISO, download, esc } from './util.js';
+import { $, $$, shiftPeriod, todayISO, download, esc, setPeriodKind, payAnchor } from './util.js';
 import { view, resetPeriod, icon, toast, closeSheet, openSheet, countUp } from './ui.js';
 import * as V from './views.js';
 import * as Sheets from './sheets.js';
@@ -132,6 +132,7 @@ const forms = {
       householdName: d.householdName.trim(), members, memberColors,
       currentMember: members.includes(current) ? current : members[0],
       monthStartDay: Math.min(28, Math.max(1, +d.monthStartDay || 1)),
+      payAnchor: d.payAnchor || null,
       currency: d.currency, locale: S.CURRENCIES[d.currency] || 'en-AU', theme: d.theme,
     });
     s.sharedUpdatedAt = Date.now();
@@ -170,6 +171,14 @@ const forms = {
 };
 
 const changes = {
+  // Look at money by calendar month or by pay fortnight (each phone chooses its own).
+  periodKind: el => {
+    if (el.value === 'fortnight' && !payAnchor()) {
+      toast('Add your fortnightly wage in Plan → Wages first, so C.A.S.H knows your payday');
+      el.checked = false; render(); return;
+    }
+    setPeriodKind(el.value); resetPeriod(); V.replayPie(); render();
+  },
   pieMode: el => {
     view.pieMode = el.value; view.pieGroup = null;
     try { localStorage.setItem('cash.pieMode', el.value); } catch {}

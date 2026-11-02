@@ -365,7 +365,7 @@ export function categoryForm(c, groupId) {
     <div class="row-icon"><label class="field"><span>Icon</span><input name="icon" value="${esc(c.icon)}" maxlength="4" class="emoji-input"></label>
       <label class="field grow"><span>Name</span><input name="name" value="${esc(c.name || '')}" required placeholder="e.g. Football club"></label></div>
     <div class="row2">
-      <label class="field"><span>Monthly budget</span><input name="budget" inputmode="decimal" value="${c.budget || ''}" placeholder="0"></label>
+      <label class="field"><span>Monthly budget</span><input name="budget" inputmode="decimal" value="${c.budget || ''}" placeholder="0">${+c.budget ? `<small class="muted">≈ ${money(c.budget * 12 / 26, { whole: true })} per pay fortnight</small>` : ''}</label>
       <label class="field"><span>Spending area</span><select name="group">${groupOptions(c.group)}</select></label>
     </div>
     ${actionsRow(isNew, 'deleteCategory', c.id)}
@@ -449,7 +449,8 @@ function deleteGroup(el) {
 
 // ---------- 50/30/20-style helper, across whatever areas you have ----------
 export function budgetHelper() {
-  const income = Math.round(expectedIn(periodOf(view.period)) || sum(S.list('incomes'), i => perMonth(incomeAmount(i), i.frequency)));
+  // an average month (26 pays ÷ 12), so a 3-payday month or the fortnight view don't skew it
+  const income = Math.round(sum(S.list('incomes').filter(i => i.active !== false), i => perMonth(incomeAmount(i), i.frequency)) || expectedIn(periodOf(view.period)));
   const gs = S.groups();
   openSheet(`${sheetHead('Budget helper', 'Share your take-home pay across your spending areas (e.g. 50/30/20)')}
   <form class="form" data-form="budgetHelper">

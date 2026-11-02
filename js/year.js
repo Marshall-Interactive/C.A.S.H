@@ -2,7 +2,7 @@
 // calendar of months (or weeks) coloured by whether money was left over,
 // and an outlook for the months still to come.
 import * as S from './store.js';
-import { esc, money, sum, periodOf, shiftPeriod, currentPeriodKey, toISO, addDays, fmtDate } from './util.js';
+import { esc, money, sum, periodOf, shiftPeriod, currentMonthKey, toISO, addDays, fmtDate } from './util.js';
 import { txInPeriod, spendLines, totals, expectedIn } from './calc.js';
 import { inOutBars } from './charts.js';
 import { view } from './ui.js';
@@ -14,7 +14,7 @@ view.yearView ||= saved('cash.yearView', 'month'); // month tiles or week tiles
 
 // The year that holds today, in the chosen kind.
 export function thisYear(kind = view.yearKind) {
-  const [y, m] = currentPeriodKey().split('-').map(Number);
+  const [y, m] = currentMonthKey().split('-').map(Number);
   return kind === 'fy' && m >= 7 ? y + 1 : y;
 }
 // Month keys in a year: Jan–Dec, or Jul–Jun for a financial year ("FY2027" = Jul 2026 – Jun 2027).
@@ -47,7 +47,7 @@ function forecastOut(nowKey) {
 }
 
 export function yearData(y = view.year ?? thisYear(), kind = view.yearKind) {
-  const nowKey = currentPeriodKey();
+  const nowKey = currentMonthKey();
   const fc = forecastOut(nowKey);
   const months = yearMonths(y, kind).map(key => {
     const p = periodOf(key);
@@ -188,7 +188,7 @@ export function yearCard() {
       <div><small>Went out</small><b>${money(d.sofar.out, { whole: true })}</b></div>
       <div><small>${d.sofar.net >= 0 ? 'Left over' : 'Overspent'}</small><b class="${d.sofar.net >= 0 ? 'pos' : 'neg'}">${money(Math.abs(d.sofar.net), { whole: true })}</b></div>
     </div>
-    ${(() => { const k = shiftPeriod(currentPeriodKey(), -1); return hasRecap(k) ? `<button class="btn sm recap-btn" data-action="wrapped" data-key="${k}">🎁 ${periodOf(k).start.toLocaleDateString('en-AU', { month: 'long' })} wrapped</button>` : ''; })()}
+    ${(() => { const k = shiftPeriod(currentMonthKey(), -1); return hasRecap(k) ? `<button class="btn sm recap-btn" data-action="wrapped" data-key="${k}">🎁 ${periodOf(k).start.toLocaleDateString('en-AU', { month: 'long' })} wrapped</button>` : ''; })()}
     <p class="small muted">${d.outlook.net >= 0 ? `🔭 On track for ${money(d.outlook.net, { whole: true })} left over by the end of ${esc(yearLabel(y))}` : `🔭 Heading for ${money(-d.outlook.net, { whole: true })} overspent by the end of ${esc(yearLabel(y))}`}</p>
   </section>`;
 }

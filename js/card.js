@@ -2,7 +2,7 @@
 // Repayments are transfers, so they never count as spending (the purchases
 // already did) — this just adds them up so you can see the card going down.
 import * as S from './store.js';
-import { esc, money, sum, periodOf, shiftPeriod, currentPeriodKey, fromISO, fmtDate } from './util.js';
+import { esc, money, sum, periodOf, shiftPeriod, currentMonthKey, fromISO, fmtDate } from './util.js';
 import { txInPeriod } from './calc.js';
 import { normalise } from './categorise.js';
 
@@ -39,7 +39,7 @@ export const cards = () => S.list('accounts').filter(a => a.kind === 'credit');
 
 // Lines under the card's balance on Home / Savings.
 export function cardLines(card) {
-  const m = cardMonth(card, currentPeriodKey());
+  const m = cardMonth(card, currentMonthKey());
   if (!m.paid && !m.spent) return `<button class="link small card-link" data-action="cardSheet" data-id="${card.id}">💸 Repayments &amp; card spending ›</button>`;
   const diff = m.paid - m.spent;
   return `<div class="card-month">
@@ -51,7 +51,7 @@ export function cardLines(card) {
 }
 
 export function cardSheetHtml(card, { sheetHead, inOutBars }) {
-  const now = currentPeriodKey();
+  const now = currentMonthKey();
   const months = Array.from({ length: 12 }, (_, i) => cardMonth(card, shiftPeriod(now, i - 11))).filter((m, i, all) => m.paid || m.spent || all.slice(0, i).some(x => x.paid || x.spent));
   const cur = cardMonth(card, now);
   const label = k => periodOf(k).start.toLocaleDateString('en-AU', { month: 'short' });

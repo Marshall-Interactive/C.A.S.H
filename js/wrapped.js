@@ -2,7 +2,7 @@
 // what came in, what went out, the biggest category, the favourite shop,
 // what was saved and what was left over.
 import * as S from './store.js';
-import { esc, money, sum, periodOf, shiftPeriod, currentPeriodKey, fromISO } from './util.js';
+import { esc, money, sum, periodOf, shiftPeriod, currentMonthKey, fromISO } from './util.js';
 import { txInPeriod, spendLines, totals } from './calc.js';
 import { similarText } from './categorise.js';
 import { confetti, countUp } from './ui.js';
@@ -15,7 +15,7 @@ export const hasRecap = key => txInPeriod(periodOf(key)).length >= 5;
 
 // First open in a new month: show last month's recap once per device.
 export function maybeShowWrapped() {
-  const last = shiftPeriod(currentPeriodKey(), -1);
+  const last = shiftPeriod(currentMonthKey(), -1);
   let seen = '';
   try { seen = localStorage.getItem(SEEN) || ''; } catch {}
   if (seen >= last || !hasRecap(last)) return;
@@ -54,7 +54,7 @@ function slidesFor(key) {
   const byWho = members.map(m => ({ m, v: sum(txs.filter(x => x.type === 'out' && !S.isTransfer(x.categoryId) && x.member === m), x => x.amount) })).filter(x => x.v > 0);
   const whoMax = Math.max(...byWho.map(x => x.v), 1);
   // best month this year?
-  const yr = yearMonths(thisYear('cal'), 'cal').filter(k => k <= key && k < currentPeriodKey()).map(k => ({ k, net: monthStats(k).net }));
+  const yr = yearMonths(thisYear('cal'), 'cal').filter(k => k <= key && k < currentMonthKey()).map(k => ({ k, net: monthStats(k).net }));
   const best = yr.length > 1 && yr.every(x => x.k === key || x.net <= s.net) && s.net > 0;
   // pots
   const potIn = sum(S.list('pots').flatMap(pt => pt.entries || []).filter(e => { const d = fromISO(e.date); return d >= p.start && d < p.end && e.amount > 0; }), e => e.amount);
@@ -74,7 +74,7 @@ function slidesFor(key) {
   return slides;
 }
 
-export function showWrapped(key = shiftPeriod(currentPeriodKey(), -1)) {
+export function showWrapped(key = shiftPeriod(currentMonthKey(), -1)) {
   document.querySelector('.wrapped')?.remove();
   const slides = slidesFor(key);
   const el = document.createElement('div');

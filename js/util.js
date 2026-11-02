@@ -60,7 +60,36 @@ export function relDay(iso) {
 // set monthStartDay = 28 so each month runs payday to payday.
 const startDay = () => getState()?.settings.monthStartDay || 1;
 
+// Or a pay fortnight: payday to the day before the next payday. Fortnight keys
+// are the payday ("2026-10-29"); month keys stay "2026-10", so either kind of
+// key can be read back whichever view is on.
+let kind = null;
+export function payAnchor() {
+  const st = getState();
+  if (st?.settings.payAnchor) return st.settings.payAnchor;
+  const pays = (st?.incomes || []).filter(i => !i.deleted && i.active !== false && i.frequency === 'fortnightly' && i.anchorDate)
+    .sort((a, b) => (+b.amount || 0) - (+a.amount || 0));
+  return pays[0]?.anchorDate || null;
+}
+export function periodKind() {
+  if (kind == null) { try { kind = localStorage.getItem('cash.periodKind') || 'month'; } catch { kind = 'month'; } }
+  return kind === 'fortnight' && payAnchor() ? 'fortnight' : 'month';
+}
+export function setPeriodKind(k) { kind = k; try { localStorage.setItem('cash.periodKind', k); } catch {} }
+const isFortnight = key => key.length === 10;
+const dayDiff = (a, b) => Math.round((b - a) / 864e5);
+export function fortnightKey(date = new Date()) {
+  const a = fromISO(payAnchor());
+  return toISO(addDays(a, Math.floor(dayDiff(a, new Date(date.getFullYear(), date.getMonth(), date.getDate())) / 14) * 14));
+}
+// Budgets are set per month; a fortnight gets 12/26 of each.
+export const budgetScale = p => (p.kind === 'fortnight' ? 12 / 26 : 1);
+export const periodWord = p => (p.kind === 'fortnight' ? 'pay' : 'month');
+
 export function currentPeriodKey(date = new Date()) {
+  return periodKind() === 'fortnight' ? fortnightKey(date) : currentMonthKey(date);
+}
+export function currentMonthKey(date = new Date()) {
   let y = date.getFullYear(), m = date.getMonth();
   if (date.getDate() < startDay()) m -= 1;
   const d = new Date(y, m, 1);
@@ -68,12 +97,19 @@ export function currentPeriodKey(date = new Date()) {
 }
 
 export function shiftPeriod(key, n) {
+  if (isFortnight(key)) return toISO(addDays(fromISO(key), 14 * n));
   const [y, m] = key.split('-').map(Number);
   const d = new Date(y, m - 1 + n, 1);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 }
 
 export function periodOf(key) {
+  if (isFortnight(key)) {
+    const start = fromISO(key), end = addDays(start, 14);
+    const dm = d => d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+    const range = `${dm(start)} – ${dm(addDays(end, -1))}`;
+    return { key, start, end, label: range, short: dm(start), range, kind: 'fortnight', month: currentMonthKey(start) };
+  }
   const [y, m] = key.split('-').map(Number);
   const sd = startDay();
   const start = new Date(y, m - 1, sd);
@@ -82,7 +118,7 @@ export function periodOf(key) {
   const short = new Date(y, m - 1, 1).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' });
   const range = sd === 1 ? monthName
     : `${fmtDate(toISO(start))} – ${fmtDate(toISO(addDays(end, -1)))}`;
-  return { key, start, end, label: monthName, short, range };
+  return { key, start, end, label: monthName, short, range, kind: 'month', month: key };
 }
 
 export const inPeriod = (iso, p) => { const d = fromISO(iso); return d >= p.start && d < p.end; };

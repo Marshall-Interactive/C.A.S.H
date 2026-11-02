@@ -1,6 +1,6 @@
 // The main screens. Each returns an HTML string for <main>.
 import * as S from './store.js';
-import { esc, money, sum, periodOf, shiftPeriod, relDay, fmtDate, perMonth, FREQS, fromISO, todayISO, round2, currentPeriodKey, toISO } from './util.js';
+import { esc, money, sum, periodOf, shiftPeriod, relDay, fmtDate, perMonth, FREQS, fromISO, todayISO, round2, currentPeriodKey, currentMonthKey, toISO, budgetScale, periodWord, periodKind, payAnchor } from './util.js';
 import { txInPeriod, spendLines, spentByCategory, totals, billsInPeriod, incomesInPeriod, expectedIn, nextDue, incomeAmount, doneTx } from './calc.js';
 import { donut, inOutBars, growthChart } from './charts.js';
 import { icon, view, sheetHead } from './ui.js';
@@ -27,9 +27,9 @@ export function topbar(route) {
     <a class="brand-sm" href="#home" aria-label="C.A.S.H home"><img src="icons/logo.svg" alt=""></a>
     <div class="tb-title"><h1>${TITLES[route] || ''}</h1><small>${esc(S.settings().householdName)} · ${who(S.settings().currentMember)}</small></div>
     ${showMonth ? `<div class="month-switch" title="${esc(p.range)}">
-      <button class="icon-btn" data-action="prevPeriod" aria-label="Previous month">${icon('chevL', 18)}</button>
-      <button class="month-label" data-action="thisPeriod" title="Back to this month">${esc(p.short)}</button>
-      <button class="icon-btn" data-action="nextPeriod" aria-label="Next month">${icon('chevR', 18)}</button></div>` : ''}
+      <button class="icon-btn" data-action="prevPeriod" aria-label="Previous ${periodWord(p)}">${icon('chevL', 18)}</button>
+      <button class="month-label" data-action="thisPeriod" title="Back to this ${periodWord(p)}">${esc(p.short)}</button>
+      <button class="icon-btn" data-action="nextPeriod" aria-label="Next ${periodWord(p)}">${icon('chevR', 18)}</button></div>` : ''}
     ${syncDot()}<a class="icon-btn" href="#settings" aria-label="Settings">${icon('gear')}</a>
   </div>`;
 }
@@ -52,6 +52,29 @@ export function txRow(t) {
   </button>`;
 }
 
+// A category's budget for the period on screen. Budgets are set per month; in a pay
+// fortnight a category gets the bills actually due in it (the mortgage in one pay,
+// nothing in the next) plus 12/26 of whatever its budget allows beyond its bills.
+let billMemo = { key: '', due: {}, monthly: {} };
+function billsByCat(p) {
+  const bills = S.list('bills').filter(b => b.active !== false);
+  const key = p.key + '|' + bills.map(b => b.id + b.updatedAt).join();
+  if (billMemo.key !== key) {
+    const due = {}, monthly = {};
+    for (const r of billsInPeriod(p)) if (r.item.active !== false) due[r.item.categoryId] = (due[r.item.categoryId] || 0) + (+r.item.amount || 0);
+    for (const b of bills) monthly[b.categoryId] = (monthly[b.categoryId] || 0) + perMonth(b.amount, b.frequency);
+    billMemo = { key, due, monthly };
+  }
+  return billMemo;
+}
+function budgetOf(c) {
+  const p = periodOf(view.period), monthly = +c.budget || 0;
+  if (p.kind !== 'fortnight' || !monthly) return monthly * budgetScale(p);
+  const { due, monthly: billsMonthly } = billsByCat(p);
+  if (!billsMonthly[c.id]) return monthly * budgetScale(p);
+  return (due[c.id] || 0) + Math.max(0, monthly - billsMonthly[c.id]) * budgetScale(p);
+}
+
 function status(spent, budget) {
   if (!budget) return { cls: 'none', text: spent ? money(spent) + ' spent' : 'No budget set' };
   const r = spent / budget;
@@ -61,12 +84,13 @@ function status(spent, budget) {
 }
 
 function catRow(c, spent) {
-  const st = status(spent, c.budget);
-  const pct = c.budget ? Math.min(100, (spent / c.budget) * 100) : 0;
+  const b = budgetOf(c);
+  const st = !b && +c.budget ? { cls: 'none', text: spent ? money(spent) + ' spent' : 'Nothing due this pay' } : status(spent, b);
+  const pct = b ? Math.min(100, (spent / b) * 100) : 0;
   return `<button class="cat-row" data-action="spendList" data-kind="cat" data-id="${c.id}">
     <span class="tx-ic">${c.icon}</span>
     <span><span class="nm">${esc(c.name)}</span><br><span class="status ${st.cls}">${st.text}</span></span>
-    <span class="vals"><b>${money(spent, { whole: true })}</b><br>of ${money(c.budget, { whole: true })}</span>
+    <span class="vals"><b>${money(spent, { whole: true })}</b><br>of ${money(b, { whole: true })}</span>
     <span class="bar"><i class="${st.cls}" style="width:${pct}%"></i></span>
   </button>`;
 }
@@ -194,7 +218,8 @@ function byArea(spent) {
 function monthOutlook(p, t, expIn) {
   const now = t.in - t.out;
   const live = p.end > new Date() && p.start <= new Date();
-  if (!live) return { now, live, toCome: 0, billsLeft: 0, usualLeft: 0, end: now, avgOut: 0 };
+  const word = periodWord(p);
+  if (!live) return { now, live, word, toCome: 0, billsLeft: 0, usualLeft: 0, end: now, avgOut: 0 };
   const today = todayISO();
   const toCome = Math.max(0, expIn - t.in);
   const billsLeft = sum(billsInPeriod(p).filter(b => !b.done && b.date >= today), b => +b.item.amount || 0);
@@ -202,7 +227,7 @@ function monthOutlook(p, t, expIn) {
   const avgOut = past.length ? sum(past, m => m.out) / past.length : 0;
   // usual spending still to come, on top of the bills (never below zero)
   const usualLeft = Math.max(0, avgOut - t.out - billsLeft);
-  return { now, live, toCome, billsLeft, usualLeft, avgOut, months: past.length, end: now + toCome - billsLeft - usualLeft };
+  return { now, live, word, toCome, billsLeft, usualLeft, avgOut, months: past.length, end: now + toCome - billsLeft - usualLeft };
 }
 const offsetName = () => S.list('accounts').find(a => a.kind === 'offset')?.name;
 // Fortnightly (or weekly) wages that land one more time than usual this month.
@@ -300,19 +325,19 @@ function incomeTally(txs, t, look, spending, saved) {
   };
   const now = look.now;
   const rest = look.live && (look.toCome > 0.004 || look.billsLeft > 0.004 || look.usualLeft > 0.004);
-  const usualNote = look.months ? `you usually spend about ${money(look.avgOut, { whole: true })} a month` : 'import a few months to estimate this';
+  const usualNote = look.months ? `you usually spend about ${money(look.avgOut, { whole: true })} a ${look.word === 'pay' ? 'fortnight' : 'month'}` : 'import a few months to estimate this';
   return `<div class="tally">
-    <p class="tally-head">${look.live ? 'So far this month' : 'This month'}</p>
+    <p class="tally-head">${look.live ? `So far this ${look.word}` : `This ${look.word}`}</p>
     ${row('💵 Wages in', money(wages), 'in')}
     ${other > 0.004 ? row('➕ Other money in', money(other), 'in') : ''}
     ${row('🛒 Spending', '−' + money(spending), 'out')}
     ${saved > 0.004 ? row('🐷 Put into savings', '−' + money(saved), 'out') : ''}
     ${row(now >= 0 ? (look.live ? '✅ Not spent so far' : '✅ Left over') : '⚠ Spent more than came in', money(Math.abs(now)), 'total ' + (now >= 0 ? 'pos' : 'neg'), now >= 0 ? stays : 'came out of savings')}
-    ${rest ? `<p class="tally-head">Rest of the month (estimate)</p>
+    ${rest ? `<p class="tally-head">Rest of the ${look.word === 'pay' ? 'fortnight' : 'month'} (estimate)</p>
     ${look.toCome > 0.004 ? row('⏳ Wages still to come', '+' + money(look.toCome), 'in muted', 'expected paydays') : ''}
-    ${look.billsLeft > 0.004 ? row('📄 Bills still to pay', '−' + money(look.billsLeft), 'out', 'due later this month') : ''}
-    ${row('🛒 Usual spending still to come', '−' + money(look.usualLeft), 'out', usualNote)}
-    ${row(look.end >= 0 ? '≈ Likely left at month end' : '⚠ Likely short at month end', money(Math.abs(look.end), { whole: true }), 'total ' + (look.end >= 0 ? 'pos' : 'neg'), look.end >= 0 ? stays : 'would come out of savings')}` : ''}
+    ${look.billsLeft > 0.004 ? row('📄 Bills still to pay', '−' + money(look.billsLeft), 'out', `due later this ${look.word}`) : ''}
+    ${look.usualLeft > 0.004 || !look.months ? row('🛒 Usual spending still to come', '−' + money(look.usualLeft), 'out', usualNote) : ''}
+    ${row(look.end >= 0 ? `≈ Likely left ${look.word === 'pay' ? 'by next payday' : 'at month end'}` : `⚠ Likely short ${look.word === 'pay' ? 'by next payday' : 'at month end'}`, money(Math.abs(look.end), { whole: true }), 'total ' + (look.end >= 0 ? 'pos' : 'neg'), look.end >= 0 ? stays : 'would come out of savings')}` : ''}
   </div>`;
 }
 
@@ -384,7 +409,7 @@ export function spendSheet(kind, id) {
       `<div class="section-title"><button class="link cat-link" data-action="spendList" data-kind="cat" data-id="${cid}">${S.cat(cid).icon} ${esc(S.cat(cid).name)} ›</button><span>${money(sum(ls, l => l.amount))}</span></div>
       <div class="card list">${ls.map(row).join('')}</div>`).join('');
   }
-  const budget = c ? +c.budget || 0 : g ? sum(S.list('categories').filter(x => x.group === g.id), x => +x.budget || 0) : 0;
+  const budget = c ? budgetOf(c) : g ? sum(S.list('categories').filter(x => x.group === g.id), budgetOf) : 0;
   const biggest = lines.reduce((m, l) => (l.amount > (m?.amount || 0) ? l : m), null);
   return `${sheetHead(title, p.range)}
     <div class="in-summary out">
@@ -425,20 +450,20 @@ export function home() {
     const lastOut = totals(txInPeriod(lp).filter(x => fromISO(x.date) < cut)).out;
     const diff = lastOut - t.out;
     if (lastOut > 0 && Math.abs(diff) >= 1) pace = `<div class="pace ${diff >= 0 ? 'up' : 'down'}">${diff >= 0 ? '🙌' : '👀'} ${diff >= 0
-      ? `<b>${money(diff, { whole: true })} less</b> spent than this time last month`
-      : `<b>${money(-diff, { whole: true })} more</b> spent than this time last month`}</div>`;
+      ? `<b>${money(diff, { whole: true })} less</b> spent than this time last ${periodWord(p)}`
+      : `<b>${money(-diff, { whole: true })} more</b> spent than this time last ${periodWord(p)}`}</div>`;
   }
 
   // Hero
   const hero = `<section class="card hero span2">
-    <div class="hero-top"><span class="label">This month</span><span class="label">${esc(p.range)}</span></div>
+    <div class="hero-top"><div class="seg small hero-kind" role="radiogroup" aria-label="Show money by">${[['month', 'Month'], ['fortnight', 'Pay fortnight']].map(([k, l]) => `<label><input type="radio" name="periodKind" value="${k}" ${periodKind() === k ? 'checked' : ''} data-change="periodKind"><span>${l}</span></label>`).join('')}</div><span class="label">${esc(p.range)}</span></div>
     <div class="hero-stats big-stats">
-      <button class="hero-stat" data-action="moneyIn"><small>↓ Money in ›</small><b>${money(t.in)}</b><small>${expIn ? 'of ' + money(expIn) + ' expected' : 'this month'}</small></button>
+      <button class="hero-stat" data-action="moneyIn"><small>↓ Money in ›</small><b>${money(t.in)}</b><small>${expIn ? 'of ' + money(expIn) + ' expected' : 'this ' + periodWord(p)}</small></button>
       <div class="hero-stat"><small>↑ Money out</small><b>${money(t.out)}</b><small>${t.count} payments</small></div>
     </div>
     <div class="hero-left ${look.now >= 0 ? '' : 'neg'}"><span>${look.now >= 0 ? (look.live ? 'Not spent so far' : 'Left over') : 'Spent more than came in'}<small>${t.in ? `you've spent ${Math.round((t.out / t.in) * 100)}% of what came in` : t.out ? 'nothing has come in yet' : 'import a statement or add your wages'}</small></span><b>${money(Math.abs(look.now))}</b></div>
     <div class="meter" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
-    ${look.live && (look.toCome || look.billsLeft || look.usualLeft) ? `<div class="hero-outlook ${look.end >= 0 ? '' : 'neg'}">📅 By month end, roughly <b>${money(Math.abs(look.end), { whole: true })} ${look.end >= 0 ? 'left' : 'short'}</b><small>after ${[look.toCome > 0.004 ? `+${money(look.toCome, { whole: true })} wages to come` : '', look.billsLeft > 0.004 ? `−${money(look.billsLeft, { whole: true })} bills` : '', look.usualLeft > 0.004 ? `−${money(look.usualLeft, { whole: true })} usual spending` : ''].filter(Boolean).join(' · ')}</small></div>` : ''}
+    ${look.live && (look.toCome || look.billsLeft || look.usualLeft) ? `<div class="hero-outlook ${look.end >= 0 ? '' : 'neg'}">📅 ${p.kind === 'fortnight' ? 'By next payday' : 'By month end'}, roughly <b>${money(Math.abs(look.end), { whole: true })} ${look.end >= 0 ? 'left' : 'short'}</b><small>after ${[look.toCome > 0.004 ? `+${money(look.toCome, { whole: true })} wages to come` : '', look.billsLeft > 0.004 ? `−${money(look.billsLeft, { whole: true })} bills` : '', look.usualLeft > 0.004 ? `−${money(look.usualLeft, { whole: true })} usual spending` : ''].filter(Boolean).join(' · ')}</small></div>` : ''}
     ${extraPaydays(p).length ? `<p class="hero-note">📅 3 paydays this month: one more than usual, so more is coming in than in a normal month. Don't count on it every month.</p>` : ''}
     ${pace}
   </section>`;
@@ -447,9 +472,9 @@ export function home() {
   const pie = moneyPie(spent, t, base, txs, look);
 
   // Budget watch
-  const budgetTotal = sum(outCats, c => c.budget);
+  const budgetTotal = sum(outCats, budgetOf);
   const watch = outCats.filter(c => c.budget > 0 && spent[c.id])
-    .sort((a, b) => spent[b.id] / b.budget - spent[a.id] / a.budget).slice(0, 4);
+    .sort((a, b) => spent[b.id] / budgetOf(b) - spent[a.id] / budgetOf(a)).slice(0, 4);
   const bst = status(t.out, budgetTotal);
   const budget = `<section class="card">
     <h2>Budget <a href="#plan/budget">See all</a></h2>
@@ -463,10 +488,10 @@ export function home() {
   const bills = billsInPeriod(p);
   const unpaid = bills.filter(b => !b.done);
   const billsCard = `<section class="card">
-    <h2>Bills this month <a href="#plan/bills">All bills</a></h2>
+    <h2>Bills this ${periodWord(p)} <a href="#plan/bills">All bills</a></h2>
     <div class="stat-row"><div class="stat"><small>Due</small><b>${money(sum(bills, b => b.item.amount))}</b></div>
       <div class="stat"><small>Still to pay</small><b>${money(sum(unpaid, b => b.item.amount))}</b></div></div>
-    ${bills.length ? unpaid.slice(0, 5).map(billRow).join('') || '<p class="status good">✓ All bills paid this month</p>'
+    ${bills.length ? unpaid.slice(0, 5).map(billRow).join('') || `<p class="status good">✓ All bills paid this ${periodWord(p)}</p>`
       : empty('📄', 'Add your bills to see what is due.', `<br><button class="btn sm" data-action="newBill">Add a bill</button>`)}
   </section>`;
 
@@ -553,7 +578,7 @@ export function txList() {
   if (q) {
     // totals over time for whatever is searched
     const every = S.list('transactions').filter(match);
-    const cur = periodOf(currentPeriodKey()), three = periodOf(shiftPeriod(cur.key, -2));
+    const cur = periodOf(currentMonthKey()), three = periodOf(shiftPeriod(cur.key, -2));
     const yStart = new Date(new Date().getFullYear(), 0, 1);
     const spent = list => { const x = totals(list); return x.out || x.in; };
     const since = d => every.filter(x => { const dd = fromISO(x.date); return dd >= d && dd < cur.end; });
@@ -595,10 +620,13 @@ function budgetTab() {
   const p = periodOf(view.period);
   const spent = spentByCategory(txInPeriod(p));
   const cats = S.list('categories').filter(c => (c.type || 'out') === 'out');
-  const expIn = expectedIn(p) || sum(S.list('incomes'), i => perMonth(incomeAmount(i), i.frequency));
-  const budgeted = sum(cats, c => c.budget);
+  const sc = budgetScale(p), fn = p.kind === 'fortnight', per = fn ? 'fortnight' : 'month';
+  const expIn = expectedIn(p) || sum(S.list('incomes'), i => perMonth(incomeAmount(i), i.frequency)) * sc;
+  const budgeted = sum(cats, budgetOf);
   const left = expIn - budgeted;
-  const billsMonthly = sum(S.list('bills').filter(b => b.active !== false), b => perMonth(b.amount, b.frequency));
+  // an average period's budgets, for comparing with average spending
+  const budgetedAvg = sum(cats, c => +c.budget || 0) * sc;
+  const billsMonthly = sum(S.list('bills').filter(b => b.active !== false), b => perMonth(b.amount, b.frequency)) * sc;
   // What really happens: money you don't spend stays in the offset, and real spending is often more than the budgets.
   const offsetAcc = S.list('accounts').find(a => a.kind === 'offset');
   const recent = [1, 2, 3].map(k => monthStats(shiftPeriod(currentPeriodKey(), -k))).filter(m => m.in || m.out);
@@ -609,20 +637,21 @@ function budgetTab() {
   for (const r of pays) byIncome[r.item.id] = (byIncome[r.item.id] || 0) + 1;
   const extraPay = Object.entries(byIncome).filter(([id, n]) => n > (S.byId('incomes', id).frequency === 'weekly' ? 4 : 2)).map(([id]) => S.byId('incomes', id).name);
   const reality = recent.length ? `<div class="plan-reality">
-      <p><b>What really happens:</b> over the last ${recent.length} month${recent.length === 1 ? '' : 's'} you spent about <b>${money(avgOut, { whole: true })}</b> a month against <b>${money(avgIn, { whole: true })}</b> coming in${avgOut > budgeted + 1 ? ` — ${money(avgOut - budgeted, { whole: true })} more than your budgets add up to` : ''}.</p>
-      <p>${avgIn - avgOut >= 0 ? `So roughly <b class="pos">${money(avgIn - avgOut, { whole: true })} a month</b> actually ${offsetAcc ? `stays in your ${esc(offsetAcc.name)}` : 'is left over'}.` : `So you've been <b class="neg">${money(avgOut - avgIn, { whole: true })} a month short</b>${offsetAcc ? ` — dipping into the ${esc(offsetAcc.name)}` : ''}.`}
-      ${avgOut > budgeted + 1 ? ' Raising the budgets to match real spending (✨ Budget helper, or tap a category) makes the plan honest.' : ''}</p>
+      <p><b>What really happens:</b> over the last ${recent.length} ${per}${recent.length === 1 ? '' : 's'} you spent about <b>${money(avgOut, { whole: true })}</b> a ${per} against <b>${money(avgIn, { whole: true })}</b> coming in${avgOut > budgetedAvg + 1 ? ` — ${money(avgOut - budgetedAvg, { whole: true })} more than your budgets add up to${fn ? ' for an average fortnight' : ''}` : ''}.</p>
+      <p>${avgIn - avgOut >= 0 ? `So roughly <b class="pos">${money(avgIn - avgOut, { whole: true })} a ${per}</b> actually ${offsetAcc ? `stays in your ${esc(offsetAcc.name)}` : 'is left over'}.` : `So you've been <b class="neg">${money(avgOut - avgIn, { whole: true })} a ${per} short</b>${offsetAcc ? ` — dipping into the ${esc(offsetAcc.name)}` : ''}.`}
+      ${avgOut > budgetedAvg + 1 ? ' Raising the budgets to match real spending (✨ Budget helper, or tap a category) makes the plan honest.' : ''}</p>
     </div>` : '';
   let html = `<div class="grid cols"><section class="card span2">
-    <h2>Your monthly plan</h2>
+    <h2>${fn ? 'Your plan for this pay' : 'Your monthly plan'}</h2>
+    ${fn ? `<p class="small muted">Budgets are set per month. Each pay fortnight gets 12/26 of them (26 pays a year ÷ 12 months), except bill categories, which get the bills actually due this pay, so the mortgage counts in the fortnight it comes out.</p>` : ''}
     <div class="stat-row">
       <div class="stat"><small>Expected income</small><b>${money(expIn, { whole: true })}</b></div>
       <div class="stat"><small>Budgeted</small><b>${money(budgeted, { whole: true })}</b></div>
       <div class="stat"><small>${left < 0 ? 'Over-planned by' : offsetAcc ? `Not budgeted — stays in ${esc(offsetAcc.name)}` : 'Not yet given a job'}</small><b class="${left >= 0 ? 'pos' : 'neg'}">${money(Math.abs(left), { whole: true })}</b></div>
-      <div class="stat"><small>Bills (monthly)</small><b>${money(billsMonthly, { whole: true })}</b></div>
+      <div class="stat"><small>Bills (${fn ? 'set aside per pay' : 'monthly'})</small><b>${money(billsMonthly, { whole: true })}</b></div>
     </div>
     ${!expIn ? `<p class="notice">Add your wages in the <a href="#plan/wages">Wages</a> tab so C.A.S.H can check your budget adds up.</p>` : ''}
-    ${extraPay.length ? `<p class="notice small">📅 ${esc(p.label)} has an extra payday (${extraPay.map(esc).join(', ')}) — paid fortnightly, a couple of months a year get 3 pays, so income looks higher than usual this month.</p>` : ''}
+    ${extraPay.length && !fn ? `<p class="notice small">📅 ${esc(p.label)} has an extra payday (${extraPay.map(esc).join(', ')}) — paid fortnightly, a couple of months a year get 3 pays, so income looks higher than usual this month.</p>` : ''}
     ${left > 0 && offsetAcc ? `<p class="small muted">Anything not budgeted isn't lost — it simply stays in your ${esc(offsetAcc.name)}, which is your savings.</p>` : ''}
     ${reality}
     <div class="btn-row"><button class="btn" data-action="budgetHelper">✨ Budget helper (50/30/20)</button><button class="btn" data-action="newCategory">${icon('plus', 18)} Category</button></div>
@@ -632,7 +661,7 @@ function budgetTab() {
   const loose = cats.filter(c => !known.has(c.group));
   for (const g of [...gs, ...(loose.length ? [S.group('ungrouped')] : [])]) {
     const gc = g.id === 'ungrouped' ? loose : cats.filter(c => c.group === g.id);
-    const gs2 = sum(gc, c => spent[c.id] || 0), gb = sum(gc, c => c.budget);
+    const gs2 = sum(gc, c => spent[c.id] || 0), gb = sum(gc, budgetOf);
     html += `<div class="section-title"><span><i class="dot" style="background:${g.color}"></i>${esc(g.name)}${g.savings && !/sav/i.test(g.name) ? ' <span class="badge">savings</span>' : ''}
         ${g.id !== 'ungrouped' ? `<button class="link" data-action="editGroup" data-id="${g.id}" aria-label="Edit ${esc(g.name)}">${icon('pen', 14)} Edit</button>` : ''}</span>
       <span>${money(gs2, { whole: true })} / ${money(gb, { whole: true })}</span></div>
@@ -648,18 +677,23 @@ function billsTab() {
   const rows = billsInPeriod(p);
   const all = S.list('bills');
   const monthly = sum(all.filter(b => b.active !== false), b => perMonth(b.amount, b.frequency));
+  const perPay = monthly * 12 / 26;
+  const lumpy = all.filter(b => b.active !== false && ['quarterly', 'yearly'].includes(b.frequency));
   const notThisMonth = all.filter(b => !rows.some(r => r.item.id === b.id));
+  const word = periodWord(p);
   return `<section class="card">
       <div class="stat-row">
         <div class="stat"><small>Bills a month</small><b>${money(monthly)}</b></div>
         <div class="stat"><small>Bills a year</small><b>${money(monthly * 12, { whole: true })}</b></div>
-        <div class="stat"><small>Paid this month</small><b>${rows.filter(r => r.done).length} of ${rows.length}</b></div>
+        <div class="stat"><small>Set aside each pay</small><b>${money(perPay)}</b></div>
+        <div class="stat"><small>Paid this ${word}</small><b>${rows.filter(r => r.done).length} of ${rows.length}</b></div>
       </div>
+      ${lumpy.length ? `<p class="small muted">Paid fortnightly? Putting <b>${money(perPay, { whole: true })}</b> aside each payday covers every bill, including ${lumpy.map(b => `${esc(b.name)} (${money(perMonth(b.amount, b.frequency) * 12 / 26, { whole: true })} a pay)`).join(', ')}, so the quarterly ones never land as a shock.</p>` : ''}
       <div class="btn-row"><button class="btn primary" data-action="newBill">${icon('plus', 18)} Add bill</button><button class="btn" data-action="findRegular">${icon('search', 18)} Find from my payments</button></div>
     </section>
     <div class="section-title"><span>Due in ${esc(p.label)}</span><span>${money(sum(rows, r => r.item.amount))}</span></div>
-    <div class="card list">${rows.length ? rows.map(billRow).join('') : empty('📄', 'No bills due this month yet.<br>Add rent, council tax, energy, phones, subscriptions…')}</div>
-    ${notThisMonth.length ? `<div class="section-title"><span>Not due this month</span></div><div class="card list">${notThisMonth.map(b => {
+    <div class="card list">${rows.length ? rows.map(billRow).join('') : empty('📄', `No bills due this ${word}.<br>Add rent, council tax, energy, phones, subscriptions…`)}</div>
+    ${notThisMonth.length ? `<div class="section-title"><span>Not due this ${word}</span></div><div class="card list">${notThisMonth.map(b => {
       const nd = nextDue(b);
       return `<button class="tx" data-action="editBill" data-id="${b.id}"><span class="tx-ic">${S.cat(b.categoryId).icon}</span>
         <span class="tx-main"><b>${esc(b.name)}</b><small>${FREQS[b.frequency] || ''}${b.active === false ? ' · paused' : nd ? ' · next ' + fmtDate(nd) : ''}</small></span>
@@ -675,7 +709,7 @@ function wagesTab() {
   const received = sum(txInPeriod(p).filter(t => t.type === 'in' && !S.isTransfer(t.categoryId)), t => t.amount);
   return `<section class="card">
       <div class="stat-row">
-        <div class="stat"><small>Expected this month</small><b>${money(sum(rows, amountOf))}</b></div>
+        <div class="stat"><small>Expected this ${periodWord(p)}</small><b>${money(sum(rows, amountOf))}</b></div>
         <div class="stat"><small>Received so far</small><b class="pos">${money(received)}</b></div>
         <div class="stat"><small>Average a month</small><b>${money(sum(S.list('incomes'), i => perMonth(incomeAmount(i), i.frequency)), { whole: true })}</b></div>
       </div>
@@ -774,7 +808,7 @@ function ring(pct) {
 
 function savingsStats(pots) {
   const entries = pots.flatMap(p => (p.entries || []).map(e => ({ ...e, pot: p })));
-  const cur = periodOf(view.period === currentPeriodKey() ? view.period : currentPeriodKey());
+  const cur = periodOf(currentMonthKey());
   const net = pk => { const pp = periodOf(pk); return sum(entries.filter(e => { const d = fromISO(e.date); return d >= pp.start && d < pp.end; }), e => e.amount); };
   const thisMonth = net(cur.key);
   // streak: months in a row with more going in than out (this month counts once it has started)
@@ -793,7 +827,7 @@ export function savings() {
   const pct = goal ? (sum(pots, p => Math.min(potSaved(p), +p.goal || 0)) / goal) * 100 : 0;
   const reached = pots.filter(p => p.goal && potSaved(p) >= p.goal).length;
   const st = savingsStats(byHand);
-  const lastMonthEnd = toISO(new Date(periodOf(currentPeriodKey()).start - 864e5));
+  const lastMonthEnd = toISO(new Date(periodOf(currentMonthKey()).start - 864e5));
   st.thisMonth += sum(saveAccs, a => { const b = Off.balanceOn(a, lastMonthEnd); return b == null ? 0 : a.balance - b; });
   const accs = S.list('accounts');
   return `<div class="grid">
@@ -828,7 +862,7 @@ function growthCard(a) {
   const pts = Off.series(a);
   const now = a.balance;
   const yStart = new Date(new Date().getFullYear(), 0, 1);
-  const lastMonthEnd = toISO(new Date(periodOf(currentPeriodKey()).start - 864e5));
+  const lastMonthEnd = toISO(new Date(periodOf(currentMonthKey()).start - 864e5));
   const atMonth = Off.balanceOn(a, lastMonthEnd), atYear = Off.balanceOn(a, toISO(new Date(yStart - 864e5))) ?? pts[0]?.v;
   const flags = Off.crossings(pts);
   const next = Off.nextMilestone(now);
@@ -901,7 +935,7 @@ function potCard(p) {
       }
     }
   } else if (goal && next) pace = `<p class="small">${money((goal * next) / 100 - saved)} to go until ${next}%</p>`;
-  const cur = periodOf(currentPeriodKey());
+  const cur = periodOf(currentMonthKey());
   const shares = {};
   for (const e of p.entries || []) { const d = fromISO(e.date); if (d >= cur.start && d < cur.end && e.amount > 0 && e.by) shares[e.by] = (shares[e.by] || 0) + e.amount; }
   const shareLine = Object.keys(shares).length ? `<div class="pot-shares"><span class="small muted">This month:</span>${Object.entries(shares).sort((a, b) => b[1] - a[1]).map(([m, v]) =>
@@ -1003,6 +1037,7 @@ export function settingsView() {
       }).join('')}</div>
       <label class="field"><span>Who uses this phone / laptop? <small class="muted">— payments added here are tagged with this person</small></span><select name="currentMember">${s.members.map(m => `<option ${m === s.currentMember ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label>
       <div class="row2">
+        <label class="field"><span>A payday <small class="muted">for the Pay fortnight view</small></span><input name="payAnchor" type="date" value="${esc(s.payAnchor || payAnchor() || '')}"><small class="muted">Any payday works: fortnights run from it, 14 days at a time</small></label>
         <label class="field"><span>Month starts on day</span><input name="monthStartDay" type="number" min="1" max="28" value="${s.monthStartDay}"><small class="muted">Set to payday (e.g. 28) to budget payday-to-payday</small></label>
         <label class="field"><span>Currency</span><select name="currency">${Object.keys(S.CURRENCIES).map(c => `<option ${c === s.currency ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
       </div>

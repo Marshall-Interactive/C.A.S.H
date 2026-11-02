@@ -1,7 +1,7 @@
 // Little motivators: a no-spend streak, and a nudge at the start of the
 // month to sweep last month's leftovers into a savings pot.
 import * as S from './store.js';
-import { esc, money, toISO, addDays, fromISO, periodOf, shiftPeriod, currentPeriodKey } from './util.js';
+import { esc, money, toISO, addDays, fromISO, periodOf, shiftPeriod, currentMonthKey } from './util.js';
 import { txInPeriod, totals } from './calc.js';
 
 // Which categories count for the streak (shared between you both).
@@ -53,7 +53,7 @@ export function streakCard() {
 
 // First 10 days of a month, if last month had money left over: offer to put some in a pot.
 export function sweepCard() {
-  const cur = periodOf(currentPeriodKey());
+  const cur = periodOf(currentMonthKey());
   if ((new Date() - cur.start) / 864e5 > 10 || !S.list('pots').some(p => !p.linkTo)) return '';
   const last = shiftPeriod(cur.key, -1);
   let done = '';
